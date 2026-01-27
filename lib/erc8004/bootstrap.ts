@@ -2,15 +2,13 @@
  * Agent Identity Bootstrap
  *
  * Handles agent identity setup:
- * 1. Check for existing AGENT_ID in env
- * 2. If exists, load identity from registry
- * 3. Initialize state for registration (done in prepare-agentkit.ts)
+ * 1. Read AGENT_ID from env (required - registration is done separately)
+ * 2. Load identity from on-chain registry
+ * 3. Verify wallet ownership matches AGENT_WALLET_ADDRESS
  *
- * Registration is handled separately in prepare-agentkit.ts by calling
- * the registerAgent action directly after wallet setup.
+ * Registration should be done via a separate script before running the agent.
  */
 
-import type { Hex } from "viem";
 import {
   getRegistryAddress,
   getChainIdFromNetworkId,
@@ -23,22 +21,16 @@ import type { AgentIdentityState, AgentCard } from "./types";
 let agentState: AgentIdentityState | null = null;
 
 /**
- * Bootstrap agent identity state.
+ * Bootstrap agent identity state from on-chain registry.
  *
- * This initializes the agent state and loads existing identity if AGENT_ID is set.
- * Registration is handled separately in prepare-agentkit.ts.
+ * Requires AGENT_ID to be set in env. Verifies that the on-chain owner
+ * matches AGENT_WALLET_ADDRESS to catch misconfiguration early.
  *
- * @param agentAddress - Optional wallet address to use (from wallet provider)
+ * @throws Error if AGENT_ID is not set or wallet ownership doesn't match
  */
-export async function bootstrapAgentIdentity(
-  agentAddress?: string,
-): Promise<AgentIdentityState> {
+export async function bootstrapAgentIdentity(): Promise<AgentIdentityState> {
   // Return cached state if already bootstrapped
   if (agentState) {
-    // Update agent address if provided and not set
-    if (agentAddress && !agentState.agentAddress) {
-      agentState.agentAddress = agentAddress;
-    }
     return agentState;
   }
 
@@ -50,72 +42,71 @@ export async function bootstrapAgentIdentity(
   const identityRegistry = getRegistryAddress("identity", chainId);
   const reputationRegistry = getRegistryAddress("reputation", chainId);
 
-  // Check for existing agent ID
-  const existingAgentId = process.env.AGENT_ID;
-  const resolvedAddress = agentAddress || process.env.AGENT_WALLET_ADDRESS || "";
+  const agentId = process.env.AGENT_ID;
+  const expectedWallet = process.env.AGENT_WALLET_ADDRESS;
 
-  if (existingAgentId) {
-    console.log(`[ERC-8004] Loading existing agent identity: ${existingAgentId}`);
-
-    const client = createIdentityClient({ chainId, rpcUrl });
-    const identity = await getAgentIdentity(client, chainId, BigInt(existingAgentId));
-
-    if (identity) {
-      agentState = {
-        agentId: existingAgentId,
-        agentAddress: identity.owner,
-        agentURI: identity.agentURI,
-        isRegistered: true,
-        chainId,
-        identityRegistry,
-        reputationRegistry,
-      };
-
-      console.log(`[ERC-8004] Loaded agent identity: ${agentState.agentId}, Owner: ${agentState.agentAddress}`);
-      return agentState;
-    }
-
-    console.warn(`[ERC-8004] Agent ID ${existingAgentId} not found in registry`);
+  // If no AGENT_ID, return unregistered state
+  if (!agentId) {
+    console.warn("[ERC-8004] AGENT_ID not set - agent is not registered");
+    agentState = {
+      agentId: null,
+      agentAddress: expectedWallet || "",
+      agentURI: null,
+      isRegistered: false,
+      chainId,
+      identityRegistry,
+      reputationRegistry,
+    };
+    return agentState;
   }
 
-  // Initialize state (registration will be handled in prepare-agentkit.ts)
+  console.log(`[ERC-8004] Loading agent identity: ${agentId}`);
+
+  const client = createIdentityClient({ chainId, rpcUrl });
+  const identity = await getAgentIdentity(client, chainId, BigInt(agentId));
+
+  if (!identity) {
+    throw new Error(
+      `[ERC-8004] Agent ID ${agentId} not found in registry. ` +
+      `Check that AGENT_ID is correct and the agent is registered on chain ${chainId}.`
+    );
+  }
+
+  // Verify wallet ownership matches
+  if (expectedWallet && identity.owner.toLowerCase() !== expectedWallet.toLowerCase()) {
+    throw new Error(
+      `[ERC-8004] Wallet mismatch! ` +
+      `AGENT_WALLET_ADDRESS (${expectedWallet}) does not match on-chain owner (${identity.owner}). ` +
+      `Either update AGENT_WALLET_ADDRESS or use the correct AGENT_ID.`
+    );
+  }
+
   agentState = {
-    agentId: null,
-    agentAddress: resolvedAddress,
-    agentURI: null,
-    isRegistered: false,
+    agentId,
+    agentAddress: identity.owner,
+    agentURI: identity.agentURI,
+    isRegistered: true,
     chainId,
     identityRegistry,
     reputationRegistry,
   };
 
+  console.log(`[ERC-8004] Verified agent identity: ${agentState.agentId}, Owner: ${agentState.agentAddress}`);
   return agentState;
 }
 
 /**
- * Update agent state after registration
- */
-export function setAgentIdentity(agentId: string, agentAddress: string, agentURI: string): void {
-  if (!agentState) {
-    throw new Error("Agent state not initialized. Call bootstrapAgentIdentity() first.");
-  }
-
-  agentState = {
-    ...agentState,
-    agentId,
-    agentAddress,
-    agentURI,
-    isRegistered: true,
-  };
-
-  console.log(`[ERC-8004] Agent identity updated: ${agentId}`);
-}
-
-/**
- * Get current agent identity state
+ * Get current agent identity state (returns null if not bootstrapped)
  */
 export function getAgentState(): AgentIdentityState | null {
   return agentState;
+}
+
+/**
+ * Reset agent state (for testing)
+ */
+export function resetAgentState(): void {
+  agentState = null;
 }
 
 /**

@@ -11,12 +11,7 @@ import {
   x402ActionProvider,
 } from "@coinbase/agentkit";
 import * as fs from "fs";
-import { erc8004ActionProvider, registerAgent } from "@/actions/erc8004";
-import {
-  bootstrapAgentIdentity,
-  setAgentIdentity,
-  buildMetadataURI,
-} from "@/lib/erc8004";
+import { erc8004ActionProvider } from "@/actions/erc8004";
 
 /**
  * AgentKit Integration Route
@@ -35,6 +30,9 @@ import {
  *    - Choose from built-in providers or create custom ones:
  *      - Built-in: https://github.com/coinbase/agentkit/tree/main/typescript/agentkit#action-providers
  *      - Custom: https://github.com/coinbase/agentkit/tree/main/typescript/agentkit#creating-an-action-provider
+ *
+ * Note: Agent identity is loaded from AGENT_ID env var by the /api/agent/identity endpoint.
+ * Registration should be done separately before running the agent.
  *
  * # Next Steps:
  * - Explore the AgentKit README: https://github.com/coinbase/agentkit
@@ -71,7 +69,6 @@ export async function prepareAgentkitAndWalletProvider(): Promise<{
   }
 
   try {
-
     // Initialize WalletProvider: https://docs.cdp.coinbase.com/agentkit/docs/wallet-management
     const walletProvider = await CdpEvmWalletProvider.configureWithWallet({
       apiKeyId: process.env.CDP_API_KEY_ID,
@@ -101,66 +98,9 @@ export async function prepareAgentkitAndWalletProvider(): Promise<{
     const exportedWallet = await walletProvider.exportWallet();
     fs.writeFileSync(WALLET_DATA_FILE, JSON.stringify(exportedWallet));
 
-    // Bootstrap agent identity after wallet setup
-    await bootstrapAndRegisterIdentity(walletProvider);
-
     return { agentkit, walletProvider };
   } catch (error) {
     console.error("Error initializing agent:", error);
     throw new Error("Failed to initialize agent");
-  }
-}
-
-/**
- * Bootstrap agent identity and register if needed.
- *
- * This function:
- * 1. Initializes the agent state (chain info, registries)
- * 2. Checks if agent is already registered (via AGENT_ID env var)
- * 3. If REGISTER_IDENTITY=true and not registered, calls registerAgent directly
- * 
- */
-async function bootstrapAndRegisterIdentity(
-  walletProvider: CdpEvmWalletProvider,
-): Promise<void> {
-  // First, bootstrap to check existing identity (pass wallet address)
-  const agentAddress = walletProvider.getAddress();
-  const state = await bootstrapAgentIdentity(agentAddress);
-
-  // If already registered, nothing more to do
-  if (state.isRegistered) {
-    console.log(`[ERC-8004] Agent already registered with ID: ${state.agentId}`);
-    return;
-  }
-
-  // Check if auto-registration is enabled
-  const shouldRegister = process.env.REGISTER_IDENTITY === "true";
-  if (!shouldRegister) {
-    console.log("[ERC-8004] Auto-registration disabled (REGISTER_IDENTITY != true)");
-    return;
-  }
-
-  // Build the agent metadata URI from domain
-  const domain = process.env.AGENT_DOMAIN || "localhost:3000";
-  const agentURI = buildMetadataURI(domain);
-
-  console.log(`[ERC-8004] Registering agent with URI: ${agentURI}`);
-
-  // Call the registerAgent action directly (same function used by the action provider)
-  const result = await registerAgent(walletProvider, { agentURI });
-
-  // Parse the result to extract agent ID
-  // The registerAgent function returns a formatted string with the agent ID
-  const agentIdMatch = result.match(/Agent ID: (\d+)/);
-  if (agentIdMatch) {
-    const agentId = agentIdMatch[1];
-    const agentAddress = walletProvider.getAddress();
-
-    // Update the agent state with the new registration
-    setAgentIdentity(agentId, agentAddress, agentURI);
-
-    console.log(`[ERC-8004] Successfully registered agent with ID: ${agentId}`);
-  } else {
-    console.log(`[ERC-8004] Registration result: ${result}`);
   }
 }

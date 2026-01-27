@@ -2,20 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useAgent } from "./hooks/useAgent";
+import { useAgentIdentity } from "./hooks/useAgentIdentity";
 import ReactMarkdown from "react-markdown";
 import { WalletConnect } from "./components/WalletConnect";
 import { FeedbackForm } from "./components/FeedbackForm";
-
-type AgentIdentity = {
-  identity: {
-    agentId: string | null;
-    isRegistered: boolean;
-  };
-  registries: {
-    chainId: number;
-    network: string;
-  };
-};
 
 /**
  * Home page for the ERC-8004 Agent Demo
@@ -24,10 +14,12 @@ export default function Home() {
   const [input, setInput] = useState("");
   const { messages, sendMessage, isThinking } = useAgent();
   const [activeTab, setActiveTab] = useState<"chat" | "endpoints" | "feedback">("chat");
-  const [agentIdentity, setAgentIdentity] = useState<AgentIdentity | null>(null);
   const [premiumResponse, setPremiumResponse] = useState<string | null>(null);
   const [lastEndpoint, setLastEndpoint] = useState<string | null>(null);
   const [lastPaymentTxHash, setLastPaymentTxHash] = useState<string | null>(null);
+
+  // Use SWR hook for agent identity
+  const { identity: agentIdentity, agentId, isRegistered, network, isLoading: identityLoading, error: identityError } = useAgentIdentity();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -38,14 +30,6 @@ export default function Home() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  // Fetch agent identity on mount
-  useEffect(() => {
-    fetch("/api/agent/identity")
-      .then(res => res.json())
-      .then(data => setAgentIdentity(data))
-      .catch(console.error);
-  }, []);
 
   const onSendMessage = async () => {
     if (!input.trim() || isThinking) return;
@@ -196,23 +180,27 @@ export default function Home() {
               {/* Agent Identity Info */}
               <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
                 <h3 className="font-semibold mb-2">Agent Identity</h3>
-                {agentIdentity ? (
+                {identityError ? (
+                  <div className="text-sm text-red-600 dark:text-red-400">
+                    <p>Error: {identityError.message}</p>
+                  </div>
+                ) : identityLoading ? (
+                  <p className="text-gray-500">Loading...</p>
+                ) : (
                   <div className="text-sm space-y-1">
                     <p>
                       <span className="text-gray-500">Agent ID:</span>{" "}
-                      {agentIdentity.identity.agentId || "Not registered"}
+                      {agentId || "Not registered"}
                     </p>
                     <p>
                       <span className="text-gray-500">Registered:</span>{" "}
-                      {agentIdentity.identity.isRegistered ? "Yes" : "No"}
+                      {isRegistered ? "Yes" : "No"}
                     </p>
                     <p>
                       <span className="text-gray-500">Network:</span>{" "}
-                      {agentIdentity.registries.network}
+                      {network || "Unknown"}
                     </p>
                   </div>
-                ) : (
-                  <p className="text-gray-500">Loading...</p>
                 )}
               </div>
 
@@ -294,7 +282,7 @@ export default function Home() {
               </div>
 
               <FeedbackForm
-                agentId={agentIdentity?.identity.agentId || null}
+                agentId={agentId}
                 endpoint={lastEndpoint || undefined}
                 paymentTxHash={lastPaymentTxHash || undefined}
               />
@@ -307,7 +295,7 @@ export default function Home() {
       <div className="w-full max-w-4xl mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
         <p>
           ERC-8004 Demo Agent | Chain:{" "}
-          {agentIdentity?.registries.network || "Loading..."} | x402 Payments Enabled
+          {network || "Loading..."} | x402 Payments Enabled
         </p>
       </div>
     </div>

@@ -2,49 +2,46 @@
  * Agent Identity Endpoint
  *
  * Returns the agent's ERC-8004 identity information including:
- * - Agent ID (if registered)
- * - Agent wallet address
+ * - Agent ID (from AGENT_ID env var)
+ * - Agent wallet address (verified against on-chain registry)
  * - Registry addresses
- * - Reputation summary
  *
- * Note: Identity is bootstrapped and registered (if REGISTER_IDENTITY=true)
- * in prepare-agentkit.ts during agent initialization.
+ * This endpoint reads AGENT_ID from env and verifies the on-chain owner
+ * matches AGENT_WALLET_ADDRESS. Registration should be done separately
+ * before running the agent.
  */
 
 import { NextResponse } from "next/server";
-import { getAgentState } from "@/lib/erc8004";
-import {
-  getRegistryAddress,
-  getChainIdFromNetworkId,
-  DEFAULT_NETWORK_ID,
-} from "@/actions/erc8004/constants";
+import { getAgentState, bootstrapAgentIdentity } from "@/lib/erc8004";
+import { getRegistryAddress } from "@/actions/erc8004/constants";
 
 export async function GET(): Promise<NextResponse> {
   try {
-    // Get the cached agent state (bootstrapped in prepare-agentkit.ts)
-    const state = getAgentState();
-    // Derive chainId from NETWORK_ID (same env var used by wallet provider)
-    const networkId = process.env.NETWORK_ID || DEFAULT_NETWORK_ID;
-    const chainId = getChainIdFromNetworkId(networkId);
-    const caipNetwork = `eip155:${chainId}`;
+    // Bootstrap agent state if not already initialized
+    // This loads from env + verifies on-chain ownership
+    let state = getAgentState();
+    if (!state) {
+      state = await bootstrapAgentIdentity();
+    }
+
+    const caipNetwork = `eip155:${state.chainId}`;
 
     const response = {
       identity: {
-        agentId: state?.agentId || null,
-        agentAddress: state?.agentAddress
+        agentId: state.agentId,
+        agentAddress: state.agentAddress
           ? `${caipNetwork}:${state.agentAddress}`
           : null,
-        agentURI: state?.agentURI || null,
-        isRegistered: state?.isRegistered || false,
+        agentURI: state.agentURI,
+        isRegistered: state.isRegistered,
       },
       registries: {
-        identity: getRegistryAddress("identity", chainId),
-        reputation: getRegistryAddress("reputation", chainId),
-        chainId,
+        identity: getRegistryAddress("identity", state.chainId),
+        reputation: getRegistryAddress("reputation", state.chainId),
+        chainId: state.chainId,
         network: caipNetwork,
       },
       config: {
-        autoRegister: process.env.REGISTER_IDENTITY === "true",
         agentName: process.env.AGENT_NAME || "ERC-8004 Demo Agent",
         agentDomain: process.env.AGENT_DOMAIN || "localhost:3000",
       },
