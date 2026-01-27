@@ -178,3 +178,99 @@ export function buildMetadataURI(domain: string): string {
   const origin = domain.startsWith("http") ? domain : `https://${domain}`;
   return `${origin}/.well-known/agent-metadata.json`;
 }
+
+/**
+ * ERC-8004 compliant agent metadata structure
+ */
+export interface ERC8004Metadata {
+  type: string;
+  name: string;
+  description: string;
+  image?: string;
+  endpoints: Array<{
+    name: string;
+    endpoint: string;
+    version?: string;
+    description?: string;
+    [key: string]: unknown;
+  }>;
+  registrations: Array<{
+    agentId: number | null;
+    agentRegistry: string;
+  }>;
+  active: boolean;
+  x402Support: boolean;
+  updatedAt?: number;
+}
+
+/**
+ * Generate ERC-8004 compliant agent metadata
+ *
+ * This follows the Agent Metadata Profile specification:
+ * https://best-practices.8004scan.io/docs/01-agent-metadata-standard.html
+ */
+export function generateERC8004Metadata(): ERC8004Metadata {
+  const name = process.env.AGENT_NAME || "ERC-8004 Demo Agent";
+  const description = process.env.AGENT_DESCRIPTION || "Demo agent with x402 paid endpoints";
+  const image = process.env.AGENT_IMAGE; // Optional: https://, ipfs://, or data: URI
+  const domain = process.env.AGENT_DOMAIN || "localhost:3000";
+  const url = domain.startsWith("http") ? domain : `https://${domain}`;
+  const networkId = process.env.NETWORK_ID || DEFAULT_NETWORK_ID;
+  const chainId = getChainIdFromNetworkId(networkId);
+  const agentWalletAddress = process.env.AGENT_WALLET_ADDRESS;
+
+  // Build endpoints array
+  const endpoints: ERC8004Metadata["endpoints"] = [];
+
+  // Web endpoint (human-facing)
+  endpoints.push({
+    name: "web",
+    endpoint: url,
+  });
+
+  // A2A endpoint
+  endpoints.push({
+    name: "A2A",
+    endpoint: `${url}/.well-known/agent-card.json`,
+    version: "0.3.0",
+  });
+
+  // Agent wallet endpoint (for x402 payments)
+  if (agentWalletAddress) {
+    endpoints.push({
+      name: "agentWallet",
+      endpoint: `eip155:${chainId}:${agentWalletAddress}`,
+    });
+  }
+
+  // Build registrations array
+  const registrations: ERC8004Metadata["registrations"] = [];
+  const identityRegistry = getRegistryAddress("identity", chainId);
+
+  // Include registration info - agentId can be null for first-time deployments
+  const agentIdStr = process.env.AGENT_ID;
+  const agentId = agentIdStr ? parseInt(agentIdStr, 10) : null;
+
+  registrations.push({
+    agentId,
+    agentRegistry: `eip155:${chainId}:${identityRegistry}`,
+  });
+
+  const metadata: ERC8004Metadata = {
+    type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+    name,
+    description,
+    endpoints,
+    registrations,
+    active: true,
+    x402Support: Boolean(agentWalletAddress),
+    updatedAt: Math.floor(Date.now() / 1000),
+  };
+
+  // Add optional image if configured
+  if (image) {
+    metadata.image = image;
+  }
+
+  return metadata;
+}
