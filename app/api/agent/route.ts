@@ -2,6 +2,9 @@ import { AgentRequest, AgentResponse } from "@/app/types/api";
 import { NextResponse } from "next/server";
 import { createAgent } from "./create-agent";
 
+// Prevent static prerendering - agentkit requires runtime
+export const dynamic = "force-dynamic";
+
 /**
  * Free echo/agent endpoint
  *
