@@ -1,6 +1,30 @@
 import { AgentRequest, AgentResponse } from "@/app/types/api";
 import { NextResponse } from "next/server";
 import { createAgent } from "./create-agent";
+
+/**
+ * Free echo/agent endpoint
+ *
+ * GET - Simple ping/echo endpoint for testing
+ * POST - Full agent interaction with AgentKit
+ */
+
+/**
+ * GET handler - Free ping endpoint
+ */
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json({
+    message: "ERC-8004 Agent - Free Endpoint",
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      free: "/api/agent",
+      premium: "/api/agent/premium",
+      identity: "/api/agent/identity",
+      agentCard: "/.well-known/agent-card.json",
+    },
+  });
+}
+
 /**
  * Handles incoming POST requests to interact with the AgentKit-powered AI agent.
  * This function processes user messages and streams responses from the agent.
