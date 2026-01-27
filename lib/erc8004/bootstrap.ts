@@ -157,13 +157,15 @@ export function generateAgentCard(): AgentCard {
     ];
   }
 
-  // Add registration info if agent is registered
-  if (agentState?.isRegistered && agentState.agentId) {
+  // Add registration info from env (works even without bootstrap)
+  const agentIdStr = process.env.AGENT_ID;
+  if (agentIdStr) {
+    const identityRegistry = getRegistryAddress("identity", chainId);
     agentCard.registrations = [
       {
-        agentId: agentState.agentId,
-        agentAddress: `${caipNetwork}:${agentState.agentAddress}`,
-        agentRegistry: agentState.identityRegistry,
+        agentId: agentIdStr,
+        agentAddress: `${caipNetwork}:${agentWalletAddress || ""}`,
+        agentRegistry: `${caipNetwork}:${identityRegistry}`,
       },
     ];
   }
