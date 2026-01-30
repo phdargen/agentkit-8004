@@ -6,27 +6,27 @@
  */
 
 import { http, createConfig } from "wagmi";
-import { baseSepolia } from "wagmi/chains";
+import { sepolia } from "wagmi/chains";
 import { injected } from "wagmi/connectors";
 import type { WalletClient, Account } from "viem";
 import { getAddress } from "viem";
 import type { ClientEvmSigner } from "@x402/evm";
 
 export const wagmiConfig = createConfig({
-  chains: [baseSepolia],
+  chains: [sepolia],
   connectors: [
     injected(),
   ],
   transports: {
-    [baseSepolia.id]: http(),
+    [sepolia.id]: http(),
   },
 });
 
 /**
  * Export chain constants for use in components
  */
-export const CHAIN_ID = baseSepolia.id;
-export const CHAIN_NAME = baseSepolia.name;
+export const CHAIN_ID = sepolia.id;
+export const CHAIN_NAME = sepolia.name;
 
 /**
  * Converts a wagmi/viem WalletClient to a ClientEvmSigner for x402Client

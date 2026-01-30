@@ -2,8 +2,8 @@
  * Identity Registry client for reading agent identity information
  */
 
-import { createPublicClient, http, type Hex } from "viem";
-import { baseSepolia } from "viem/chains";
+import { createPublicClient, http, type Hex, type Chain } from "viem";
+import { baseSepolia, sepolia } from "viem/chains";
 import { IDENTITY_REGISTRY_ABI } from "@/actions/erc8004/abis";
 import { getRegistryAddress } from "@/actions/erc8004/constants";
 import type { IdentityRecord } from "./types";
@@ -23,11 +23,17 @@ interface SimplePublicClient {
   }) => Promise<unknown>;
 }
 
+// Chain mapping by chainId
+const CHAINS: Record<number, Chain> = {
+  84532: baseSepolia,
+  11155111: sepolia,
+};
+
 /**
  * Creates a public client for the identity registry
  */
 export function createIdentityClient(options: IdentityClientOptions): SimplePublicClient {
-  const chain = options.chainId === 84532 ? baseSepolia : baseSepolia; // Add more chains as needed
+  const chain = CHAINS[options.chainId] || baseSepolia;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return createPublicClient({

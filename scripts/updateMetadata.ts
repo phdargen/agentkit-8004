@@ -29,7 +29,7 @@ import {
   getChainIdFromNetworkId,
   DEFAULT_NETWORK_ID,
 } from "../actions/erc8004/constants.js";
-import { IDENTITY_REGISTRY_ABI } from "../actions/erc8004/abis.js";
+import { IDENTITY_REGISTRY_ABI } from "../lib/erc8004/abi.js";
 
 // Chain configs for explorer URLs
 const EXPLORER_URLS: Record<number, string> = {
@@ -385,7 +385,7 @@ async function main() {
     console.log("📋 Transaction:");
     console.log(`   ${explorer}/tx/${setUriHash}\n`);
 
-    const scanPath = networkId === "base-sepolia" ? "base-sepolia" : "eth-sepolia";
+    const scanPath = networkId === "base-sepolia" ? "base-sepolia" : "sepolia";
     console.log("🔗 View on 8004scan:");
     console.log(`   https://www.8004scan.io/agents/${scanPath}/${agentId}\n`);
 

@@ -36,7 +36,7 @@ registerExactEvmScheme(server);
  * Get the default x402 payment config for this agent
  */
 export function getDefaultPaymentConfig() {
-  const chainId = parseInt(process.env.CHAIN_ID || "84532", 10);
+  const chainId = parseInt(process.env.CHAIN_ID || "11155111", 10);
   let price = process.env.X402_PRICE || "$0.001";
   const payTo = process.env.AGENT_WALLET_ADDRESS || "";
 

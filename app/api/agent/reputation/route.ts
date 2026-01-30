@@ -12,12 +12,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SDK } from "agent0-sdk";
 import { getCachedIdentity, loadAgentIdentity } from "@/lib/erc8004";
-import { baseSepolia } from "viem/chains"
+import { sepolia } from "viem/chains"
 
 // Initialize SDK for read-only operations
 function getSDK(chainId: number): SDK {
 
-  const rpcUrl = process.env.RPC_URL || baseSepolia.rpcUlrs.default.http[0] ;
+  const rpcUrl = process.env.RPC_URL || sepolia.rpcUrls.default.http[0] ;
   if (!rpcUrl) {
     throw new Error("RPC_URL environment variable is required");
   }

@@ -30,7 +30,7 @@ import {
   getChainIdFromNetworkId,
   DEFAULT_NETWORK_ID,
 } from "../actions/erc8004/constants.js";
-import { IDENTITY_REGISTRY_ABI } from "../actions/erc8004/abis.js";
+import { IDENTITY_REGISTRY_ABI } from "../lib/erc8004/abi.js";
 
 // Chain configs for explorer URLs
 const EXPLORER_URLS: Record<number, string> = {
@@ -318,7 +318,7 @@ async function main() {
     const registerData = encodeFunctionData({
       abi: IDENTITY_REGISTRY_ABI,
       functionName: "register",
-      args: [""],
+      args: [],
     });
 
     // Send mint transaction
@@ -350,9 +350,12 @@ async function main() {
             topics: log.topics,
           });
 
-          if (decoded.eventName === "Registered") {
-            agentId = (decoded.args as { agentId: bigint }).agentId.toString();
-            break;
+          if (decoded.eventName === "Registered" && decoded.args) {
+            const args = decoded.args as unknown as { agentId: bigint };
+            if ("agentId" in args) {
+              agentId = args.agentId.toString();
+              break;
+            }
           }
         } catch {
           // Not the event we're looking for
@@ -447,7 +450,7 @@ async function main() {
     console.log(`   - Mint: ${explorer}/tx/${registerHash}`);
     console.log(`   - Set URI: ${explorer}/tx/${setUriHash}\n`);
 
-    const scanPath = networkId === "base-sepolia" ? "base-sepolia" : "eth-sepolia";
+    const scanPath = networkId === "base-sepolia" ? "base-sepolia" : "sepolia";
     console.log("🔗 View on 8004scan:");
     console.log(`   https://www.8004scan.io/agents/${scanPath}/${agentId}\n`);
 

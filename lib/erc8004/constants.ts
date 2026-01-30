@@ -1,0 +1,30 @@
+import { Hex } from "viem";
+
+// Chain IDs for supported networks
+export const SUPPORTED_CHAIN_IDS = {
+  ETHEREUM_MAINNET: 1,
+  ETHEREUM_SEPOLIA: 11155111,
+  BASE_MAINNET: 8453,
+  BASE_SEPOLIA: 84532,
+} as const;
+
+// Registry addresses by chain ID
+export const REGISTRY_ADDRESSES: Record<number, { identity: Hex; reputation: Hex }> = {
+  [SUPPORTED_CHAIN_IDS.ETHEREUM_MAINNET]: {
+    identity: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+    reputation: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
+  },
+  [SUPPORTED_CHAIN_IDS.ETHEREUM_SEPOLIA]: {
+    identity: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    reputation: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+  },
+  [SUPPORTED_CHAIN_IDS.BASE_MAINNET]: {
+    identity: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+    reputation: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
+  },
+  [SUPPORTED_CHAIN_IDS.BASE_SEPOLIA]: {
+    identity: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    reputation: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+  },
+};
+

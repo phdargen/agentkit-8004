@@ -72,7 +72,8 @@ export const REPUTATION_REGISTRY_ABI = [
   {
     inputs: [
       { internalType: "uint256", name: "agentId", type: "uint256" },
-      { internalType: "uint8", name: "score", type: "uint8" },
+      { internalType: "int128", name: "value", type: "int128" },
+      { internalType: "uint8", name: "valueDecimals", type: "uint8" },
       { internalType: "string", name: "tag1", type: "string" },
       { internalType: "string", name: "tag2", type: "string" },
       { internalType: "string", name: "endpoint", type: "string" },
@@ -111,11 +112,12 @@ export const REPUTATION_REGISTRY_ABI = [
     inputs: [
       { internalType: "uint256", name: "agentId", type: "uint256" },
       { internalType: "address", name: "clientAddress", type: "address" },
-      { internalType: "uint64", name: "index", type: "uint64" },
+      { internalType: "uint64", name: "feedbackIndex", type: "uint64" },
     ],
     name: "readFeedback",
     outputs: [
-      { internalType: "uint8", name: "score", type: "uint8" },
+      { internalType: "int128", name: "value", type: "int128" },
+      { internalType: "uint8", name: "valueDecimals", type: "uint8" },
       { internalType: "string", name: "tag1", type: "string" },
       { internalType: "string", name: "tag2", type: "string" },
       { internalType: "bool", name: "isRevoked", type: "bool" },
@@ -133,7 +135,8 @@ export const REPUTATION_REGISTRY_ABI = [
     name: "getSummary",
     outputs: [
       { internalType: "uint64", name: "count", type: "uint64" },
-      { internalType: "uint8", name: "averageScore", type: "uint8" },
+      { internalType: "int128", name: "summaryValue", type: "int128" },
+      { internalType: "uint8", name: "summaryValueDecimals", type: "uint8" },
     ],
     stateMutability: "view",
     type: "function",

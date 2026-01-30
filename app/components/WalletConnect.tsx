@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { CHAIN_NAME } from "../lib/wagmi-config";
 
@@ -11,6 +12,22 @@ export function WalletConnect() {
   const { address, isConnected, chain } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
+  
+  // Prevent hydration mismatch by only rendering wallet state after mount
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Show loading skeleton during SSR and initial hydration
+  if (!mounted) {
+    return (
+      <div className="flex flex-col gap-2 p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div className="h-5 w-48 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+        <div className="h-10 w-full bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+      </div>
+    );
+  }
 
   if (isConnected && address) {
     return (

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { keccak256, toHex } from "viem";
-import { REPUTATION_REGISTRY_ABI } from "@/actions/erc8004/abis";
+import { REPUTATION_REGISTRY_ABI } from "@/lib/erc8004/abi";
 import { getRegistryAddress } from "@/actions/erc8004/constants";
 import { CHAIN_ID } from "../lib/wagmi-config";
 
@@ -32,15 +32,32 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: Fe
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
+    // Ensure we actively poll for the receipt
+    query: {
+      enabled: !!hash,
+      refetchInterval: 1000,
+    },
   });
 
   // Call onSuccess callback when feedback is successfully submitted
   useEffect(() => {
-    if (isSuccess && !hasNotifiedSuccess) {
+    if (isSuccess && hash && !hasNotifiedSuccess) {
       setHasNotifiedSuccess(true);
       onSuccess?.();
+      // Reset form state after successful submission
+      setScore(80);
+      setTag1("");
+      setTag2("");
+      setComment("");
     }
-  }, [isSuccess, hasNotifiedSuccess, onSuccess]);
+  }, [isSuccess, hash, hasNotifiedSuccess, onSuccess]);
+
+  // Reset notification flag when starting a new transaction
+  useEffect(() => {
+    if (isPending) {
+      setHasNotifiedSuccess(false);
+    }
+  }, [isPending]);
 
   const generateFeedbackData = (): { uri: string; hash: `0x${string}` } => {
     const feedbackData = {
@@ -72,7 +89,8 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: Fe
       functionName: "giveFeedback",
       args: [
         BigInt(agentId),
-        score,
+        BigInt(score),  // value (int128)
+        0,              // valueDecimals (uint8)
         tag1 || "",
         tag2 || "",
         endpoint || "",

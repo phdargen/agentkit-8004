@@ -167,5 +167,9 @@ export function get8004ScanUrl(chainId: number, agentId: string): string | null 
   if (!networkName) {
     return null;
   }
-  return `https://www.8004scan.io/agents/${networkName}/${agentId}`;
+  let scanPath = networkName;
+  if (networkName === "ethereum-sepolia") {
+    scanPath = "sepolia";
+  }
+  return `https://www.8004scan.io/agents/${scanPath}/${agentId}`;
 }
