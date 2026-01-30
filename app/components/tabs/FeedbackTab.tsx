@@ -6,12 +6,14 @@ interface FeedbackTabProps {
   agentId: string | null;
   lastEndpoint: string | null;
   lastPaymentTxHash: string | null;
+  onFeedbackSuccess?: () => void;
 }
 
 export function FeedbackTab({
   agentId,
   lastEndpoint,
   lastPaymentTxHash,
+  onFeedbackSuccess,
 }: FeedbackTabProps) {
   return (
     <div className="space-y-4">
@@ -29,6 +31,7 @@ export function FeedbackTab({
         agentId={agentId}
         endpoint={lastEndpoint || undefined}
         paymentTxHash={lastPaymentTxHash || undefined}
+        onSuccess={onFeedbackSuccess}
       />
     </div>
   );

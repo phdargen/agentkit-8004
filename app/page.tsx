@@ -6,8 +6,9 @@ import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { useAgent } from "./hooks/useAgent";
 import { useAgentIdentity } from "./hooks/useAgentIdentity";
+import { useAgentReputation } from "./hooks/useAgentReputation";
 import { WalletConnect } from "./components/WalletConnect";
-import { ChatTab, EndpointsTab, FeedbackTab } from "./components/tabs";
+import { ChatTab, ReputationTab, FeedbackTab } from "./components/tabs";
 import { CHAIN_ID, CHAIN_NAME, wagmiToClientSigner } from "./lib/wagmi-config";
 
 /**
@@ -16,15 +17,16 @@ import { CHAIN_ID, CHAIN_NAME, wagmiToClientSigner } from "./lib/wagmi-config";
 export default function Home() {
   const [input, setInput] = useState("");
   const { messages, sendMessage, isThinking } = useAgent();
-  const [activeTab, setActiveTab] = useState<"chat" | "endpoints" | "feedback">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "reputation" | "feedback">("chat");
   const [premiumResponse, setPremiumResponse] = useState<string | null>(null);
   const [lastEndpoint, setLastEndpoint] = useState<string | null>(null);
   const [lastPaymentTxHash, setLastPaymentTxHash] = useState<string | null>(null);
   const [isTestingEndpoint, setIsTestingEndpoint] = useState(false);
   const [endpointError, setEndpointError] = useState<string | null>(null);
 
-  // Use SWR hook for agent identity
+  // Use SWR hooks for agent identity and reputation
   const { agentId, isRegistered, network, rawMetadata, explorerUrl, isLoading: identityLoading, error: identityError } = useAgentIdentity();
+  const { summary, feedback, isLoading: reputationLoading, error: reputationError, refresh: refreshReputation } = useAgentReputation(agentId);
   
   // Wagmi hooks for wallet connection and signing
   const { isConnected, chain } = useAccount();
@@ -191,6 +193,12 @@ export default function Home() {
     }
   };
 
+  // Handler for feedback submission - refreshes reputation data
+  const handleFeedbackSuccess = () => {
+    // Refresh reputation data after feedback is submitted
+    refreshReputation();
+  };
+
   return (
     <div className="flex flex-col flex-grow items-center justify-center text-black dark:text-white w-full h-full p-4">
       {/* Wallet Connect Section */}
@@ -213,14 +221,14 @@ export default function Home() {
             Chat with Agent
           </button>
           <button
-            onClick={() => setActiveTab("endpoints")}
+            onClick={() => setActiveTab("reputation")}
             className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
-              activeTab === "endpoints"
+              activeTab === "reputation"
                 ? "bg-[#0052FF] text-white"
                 : "hover:bg-gray-100 dark:hover:bg-gray-700"
             }`}
           >
-            Test Endpoints
+            Reputation
           </button>
           <button
             onClick={() => setActiveTab("feedback")}
@@ -243,16 +251,6 @@ export default function Home() {
               isThinking={isThinking}
               onInputChange={setInput}
               onSendMessage={onSendMessage}
-            />
-          )}
-
-          {activeTab === "endpoints" && (
-            <EndpointsTab
-              agentId={agentId}
-              isRegistered={isRegistered}
-              network={network}
-              identityLoading={identityLoading}
-              identityError={identityError}
               isConnected={isConnected}
               isOnCorrectChain={isOnCorrectChain}
               chainName={CHAIN_NAME}
@@ -262,12 +260,26 @@ export default function Home() {
               endpointError={endpointError}
               premiumResponse={premiumResponse}
               lastPaymentTxHash={lastPaymentTxHash}
-              rawMetadata={rawMetadata}
-              explorerUrl={explorerUrl}
               onTestFreeEndpoint={testFreeEndpoint}
               onTestPremiumInfo={testPremiumInfo}
               onTestPremiumWithPayment={testPremiumWithPayment}
               onSwitchChain={handleSwitchChain}
+            />
+          )}
+
+          {activeTab === "reputation" && (
+            <ReputationTab
+              agentId={agentId}
+              isRegistered={isRegistered}
+              network={network}
+              identityLoading={identityLoading}
+              identityError={identityError}
+              rawMetadata={rawMetadata}
+              explorerUrl={explorerUrl}
+              summary={summary}
+              feedback={feedback}
+              reputationLoading={reputationLoading}
+              reputationError={reputationError}
             />
           )}
 
@@ -276,6 +288,7 @@ export default function Home() {
               agentId={agentId}
               lastEndpoint={lastEndpoint}
               lastPaymentTxHash={lastPaymentTxHash}
+              onFeedbackSuccess={handleFeedbackSuccess}
             />
           )}
         </div>

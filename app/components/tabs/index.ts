@@ -1,3 +1,3 @@
 export { ChatTab } from "./ChatTab";
-export { EndpointsTab } from "./EndpointsTab";
+export { ReputationTab } from "./ReputationTab";
 export { FeedbackTab } from "./FeedbackTab";

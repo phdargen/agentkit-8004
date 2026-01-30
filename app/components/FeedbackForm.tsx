@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { keccak256, toHex } from "viem";
 import { REPUTATION_REGISTRY_ABI } from "@/actions/erc8004/abis";
@@ -11,18 +11,20 @@ type FeedbackFormProps = {
   agentId: string | null;
   endpoint?: string;
   paymentTxHash?: string;
+  onSuccess?: () => void;
 };
 
 /**
  * FeedbackForm component for submitting reputation feedback
  * Users can rate agents on a 0-100 scale with optional tags
  */
-export function FeedbackForm({ agentId, endpoint, paymentTxHash }: FeedbackFormProps) {
+export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: FeedbackFormProps) {
   const { isConnected } = useAccount();
   const [score, setScore] = useState(80);
   const [tag1, setTag1] = useState("");
   const [tag2, setTag2] = useState("");
   const [comment, setComment] = useState("");
+  const [hasNotifiedSuccess, setHasNotifiedSuccess] = useState(false);
 
   const reputationRegistry = getRegistryAddress("reputation", CHAIN_ID);
 
@@ -31,6 +33,14 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash }: FeedbackFormP
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
+
+  // Call onSuccess callback when feedback is successfully submitted
+  useEffect(() => {
+    if (isSuccess && !hasNotifiedSuccess) {
+      setHasNotifiedSuccess(true);
+      onSuccess?.();
+    }
+  }, [isSuccess, hasNotifiedSuccess, onSuccess]);
 
   const generateFeedbackData = (): { uri: string; hash: `0x${string}` } => {
     const feedbackData = {
