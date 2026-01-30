@@ -63,6 +63,20 @@ export const GetReputationSummarySchema = z
   .describe("Instructions for getting agent reputation summary");
 
 /**
+ * Schema for generating an AI image
+ */
+export const GenerateImageSchema = z
+  .object({
+    prompt: z
+      .string()
+      .min(3)
+      .max(4000)
+      .describe("A detailed description of the image to generate"),
+  })
+  .strip()
+  .describe("Instructions for generating an AI image");
+
+/**
  * Legacy schema for backward compatibility
  * @deprecated Use specific schemas instead
  */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useAccount, useWalletClient, useSwitchChain } from "wagmi";
 import { x402Client, wrapFetchWithPayment, x402HTTPClient } from "@x402/fetch";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
@@ -38,7 +38,6 @@ export interface GeneratedImage {
  */
 export default function Home() {
   const [input, setInput] = useState("");
-  const { messages, sendMessage, isThinking } = useAgent();
   const [activeTab, setActiveTab] = useState<"chat" | "reputation" | "feedback">("chat");
   const [premiumResponse, setPremiumResponse] = useState<string | null>(null);
   const [lastEndpoint, setLastEndpoint] = useState<string | null>(null);
@@ -48,6 +47,8 @@ export default function Home() {
   const [endpointError, setEndpointError] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [lastGeneratedImage, setLastGeneratedImage] = useState<GeneratedImage | null>(null);
+  // Pending image prompt - stored when user needs to switch chains before generating
+  const [pendingImagePrompt, setPendingImagePrompt] = useState<string | null>(null);
 
   // Use SWR hooks for agent identity and reputation
   const { agentId, isRegistered, network, rawMetadata, explorerUrl, isLoading: identityLoading, error: identityError } = useAgentIdentity();
@@ -62,6 +63,25 @@ export default function Home() {
   const isOnPaymentChain = chain?.id === PAYMENT_CHAIN_ID;
   // Check if wallet is on the correct chain for identity/reputation (Sepolia)
   const isOnIdentityChain = chain?.id === IDENTITY_CHAIN_ID;
+
+  // Ref to store the latest generateImageWithPayment function
+  const generateImageRef = useRef<((prompt: string) => void) | null>(null);
+
+  // Stable callback for useAgent that calls the ref
+  const handleAgentImageRequest = useCallback((prompt: string) => {
+    console.log("[handleAgentImageRequest] Called with prompt:", prompt);
+    console.log("[handleAgentImageRequest] generateImageRef.current:", !!generateImageRef.current);
+    if (generateImageRef.current) {
+      generateImageRef.current(prompt);
+    } else {
+      console.error("[handleAgentImageRequest] generateImageRef.current is null!");
+    }
+  }, []);
+
+  // Initialize agent with image generation callback
+  const { messages, sendMessage, isThinking } = useAgent({
+    onGenerateImage: handleAgentImageRequest,
+  });
 
   const onSendMessage = async () => {
     if (!input.trim() || isThinking) return;
@@ -231,26 +251,44 @@ export default function Home() {
 
   // Generate image with x402 payment
   const generateImageWithPayment = async (imagePrompt: string) => {
+    console.log("[generateImageWithPayment] Called with prompt:", imagePrompt);
+    console.log("[generateImageWithPayment] isConnected:", isConnected);
+    console.log("[generateImageWithPayment] isOnPaymentChain:", isOnPaymentChain);
+    console.log("[generateImageWithPayment] walletClient:", !!walletClient);
+
     if (!isConnected) {
-      setEndpointError("Please connect your wallet first");
+      console.log("[generateImageWithPayment] Not connected, showing error");
+      setEndpointError("Please connect your wallet first to generate images");
       return;
     }
     
     if (!isOnPaymentChain) {
-      setEndpointError(`Please switch to ${PAYMENT_CHAIN_NAME} network for payments`);
+      console.log("[generateImageWithPayment] Wrong chain, triggering chain switch");
+      // Store the prompt and trigger chain switch
+      setPendingImagePrompt(imagePrompt);
+      try {
+        switchChain({ chainId: PAYMENT_CHAIN_ID });
+      } catch (err) {
+        console.error("Failed to switch chain:", err);
+        setEndpointError(`Failed to switch to ${PAYMENT_CHAIN_NAME}: ${err instanceof Error ? err.message : String(err)}`);
+        setPendingImagePrompt(null);
+      }
       return;
     }
     
     if (!walletClient) {
+      console.log("[generateImageWithPayment] No wallet client, showing error");
       setEndpointError("Wallet client not available. Please ensure your wallet supports signing.");
       return;
     }
 
     if (!imagePrompt.trim()) {
+      console.log("[generateImageWithPayment] Empty prompt, showing error");
       setEndpointError("Please enter a prompt for image generation");
       return;
     }
 
+    console.log("[generateImageWithPayment] All checks passed, initiating payment flow");
     setIsGeneratingImage(true);
     setEndpointError(null);
     setPremiumResponse(null);
@@ -336,6 +374,20 @@ export default function Home() {
       setIsGeneratingImage(false);
     }
   };
+
+  // Keep the ref updated with the latest generateImageWithPayment function
+  // Setting directly during render is safe for refs
+  generateImageRef.current = generateImageWithPayment;
+
+  // Resume image generation after chain switch completes
+  useEffect(() => {
+    if (pendingImagePrompt && isOnPaymentChain && walletClient && !isSwitchingChain) {
+      console.log("[useEffect] Chain switch complete, resuming image generation");
+      const prompt = pendingImagePrompt;
+      setPendingImagePrompt(null);
+      generateImageWithPayment(prompt);
+    }
+  }, [isOnPaymentChain, walletClient, isSwitchingChain, pendingImagePrompt]);
 
   // Handler for feedback submission - refreshes reputation data
   const handleFeedbackSuccess = () => {

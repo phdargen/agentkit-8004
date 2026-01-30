@@ -63,18 +63,41 @@ export async function POST(
 
     // 4️. Process the streamed response chunks into a single message
     let agentResponse = "";
+    let generateImageRequest: { prompt: string } | null = null;
+
     for await (const chunk of stream) {
       console.log("chunk", chunk);
-      if("tools" in chunk) {
-        console.log("tools", chunk.tool_result);
+      if ("tools" in chunk) {
+        // Check for generateImg flag in tool results
+        const toolMessages = chunk.tools?.messages;
+        if (Array.isArray(toolMessages)) {
+          for (const msg of toolMessages) {
+            const content = msg?.content;
+            if (typeof content === "string") {
+              try {
+                const parsed = JSON.parse(content);
+                if (parsed.generateImg && parsed.prompt) {
+                  generateImageRequest = { prompt: parsed.prompt };
+                  console.log("Image generation request detected:", generateImageRequest);
+                }
+              } catch {
+                // Not JSON, ignore
+              }
+            }
+          }
+        }
       }
       if ("agent" in chunk) {
         agentResponse += chunk.agent.messages[0].content;
       }
     }
 
-    // 5️. Return the final response
-    return NextResponse.json({ response: agentResponse });
+    // 5️. Return the final response with optional generateImage flag
+    const response: AgentResponse = { response: agentResponse };
+    if (generateImageRequest) {
+      response.generateImage = generateImageRequest;
+    }
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Error processing request:", error);
     return NextResponse.json({

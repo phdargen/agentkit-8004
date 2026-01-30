@@ -1,17 +1,13 @@
 import {
   AgentKit,
-  cdpApiActionProvider,
-  cdpEvmWalletActionProvider,
   CdpEvmWalletProvider,
-  erc20ActionProvider,
   pythActionProvider,
   walletActionProvider,
   WalletProvider,
-  wethActionProvider,
-  x402ActionProvider,
 } from "@coinbase/agentkit";
 import * as fs from "fs";
 import { erc8004ActionProvider } from "@/actions/erc8004";
+import { imageGenerationActionProvider } from "@/actions/erc8004/imageGenerationActionProvider";
 
 /**
  * AgentKit Integration Route
@@ -83,14 +79,10 @@ export async function prepareAgentkitAndWalletProvider(): Promise<{
     const agentkit = await AgentKit.from({
       walletProvider,
       actionProviders: [
-        wethActionProvider(),
         pythActionProvider(),
         walletActionProvider(),
-        erc20ActionProvider(),
-        cdpApiActionProvider(),
-        cdpEvmWalletActionProvider(),
-        x402ActionProvider(),
         erc8004ActionProvider(), // ERC-8004 identity & reputation actions
+        imageGenerationActionProvider(), // AI image generation (triggers x402 payment flow)
       ],
     });
 
