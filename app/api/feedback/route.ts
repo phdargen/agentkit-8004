@@ -12,10 +12,21 @@ interface ProofOfPayment {
 }
 
 /**
+ * Generated image info
+ */
+interface GeneratedImage {
+  ipfsHash: string;
+  ipfsUri: string;
+  httpUrl: string;
+  prompt: string;
+}
+
+/**
  * Feedback metadata structure
+ * Note: Uses 'text' to match SDK's FeedbackFileInput interface
  */
 interface FeedbackMetadata {
-  comment: string;
+  text: string;
   score: number;
   tag1: string;
   tag2: string;
@@ -23,6 +34,7 @@ interface FeedbackMetadata {
   endpoint?: string;
   paymentTxHash?: string;
   proofOfPayment?: ProofOfPayment;
+  generatedImage?: GeneratedImage;
 }
 
 /**
@@ -85,7 +97,7 @@ function generateDataUri(feedbackData: FeedbackMetadata): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { comment, score, tag1, tag2, endpoint, paymentTxHash, proofOfPayment } = body;
+    const { comment, score, tag1, tag2, endpoint, paymentTxHash, proofOfPayment, generatedImage } = body;
 
     // Validate required fields
     if (typeof score !== "number" || score < 0 || score > 100) {
@@ -95,9 +107,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build feedback metadata
+    // Build feedback metadata (use 'text' to match SDK's FeedbackFileInput)
     const feedbackData: FeedbackMetadata = {
-      comment: comment || "",
+      text: comment || "",
       score,
       tag1: tag1 || "",
       tag2: tag2 || "",
@@ -113,6 +125,9 @@ export async function POST(request: NextRequest) {
     }
     if (proofOfPayment) {
       feedbackData.proofOfPayment = proofOfPayment;
+    }
+    if (generatedImage) {
+      feedbackData.generatedImage = generatedImage;
     }
 
     // Generate hash from the feedback data

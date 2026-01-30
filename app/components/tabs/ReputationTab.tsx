@@ -279,10 +279,10 @@ export function ReputationTab({
                       </div>
                     )}
 
-                    {/* Feedback Text */}
+                    {/* Comment */}
                     {f.text && (
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                        {f.text}
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 italic">
+                        &quot;{f.text}&quot;
                       </p>
                     )}
 
@@ -291,6 +291,47 @@ export function ReputationTab({
                       <p className="text-xs text-gray-400 mt-1">
                         Endpoint: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">{f.endpoint}</code>
                       </p>
+                    )}
+
+                    {/* Generated Image */}
+                    {f.generatedImage?.httpUrl && (
+                      <div className="mt-2">
+                        <p className="text-xs text-gray-400 mb-1">Generated Image:</p>
+                        <a
+                          href={f.generatedImage.httpUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block"
+                        >
+                          <img
+                            src={f.generatedImage.httpUrl}
+                            alt={f.generatedImage.prompt || "Generated image"}
+                            className="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-700 hover:opacity-80 transition-opacity"
+                          />
+                        </a>
+                        {f.generatedImage.prompt && (
+                          <p className="text-xs text-gray-400 mt-1 truncate max-w-xs" title={f.generatedImage.prompt}>
+                            &quot;{f.generatedImage.prompt}&quot;
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Proof of Payment */}
+                    {f.proofOfPayment?.txHash && (
+                      <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
+                        <p className="text-xs text-green-700 dark:text-green-400 font-medium">
+                          Verified Payment
+                        </p>
+                        <a
+                          href={`https://sepolia.basescan.org/tx/${f.proofOfPayment.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-500 hover:text-blue-600 hover:underline font-mono"
+                        >
+                          {f.proofOfPayment.txHash.slice(0, 10)}...{f.proofOfPayment.txHash.slice(-8)}
+                        </a>
+                      </div>
                     )}
                   </div>
 

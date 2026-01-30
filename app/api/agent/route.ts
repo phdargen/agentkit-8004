@@ -22,6 +22,7 @@ export async function GET(): Promise<NextResponse> {
     endpoints: {
       free: "/api/agent",
       premium: "/api/agent/premium",
+      image: "/api/agent/image",
       identity: "/api/agent/identity",
     },
   });
@@ -63,6 +64,10 @@ export async function POST(
     // 4️. Process the streamed response chunks into a single message
     let agentResponse = "";
     for await (const chunk of stream) {
+      console.log("chunk", chunk);
+      if("tools" in chunk) {
+        console.log("tools", chunk.tool_result);
+      }
       if ("agent" in chunk) {
         agentResponse += chunk.agent.messages[0].content;
       }

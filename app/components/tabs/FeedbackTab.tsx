@@ -1,13 +1,14 @@
 "use client";
 
 import { FeedbackForm } from "../FeedbackForm";
-import type { ProofOfPayment } from "../../page";
+import type { ProofOfPayment, GeneratedImage } from "../../page";
 
 interface FeedbackTabProps {
   agentId: string | null;
   lastEndpoint: string | null;
   lastPaymentTxHash: string | null;
   proofOfPayment?: ProofOfPayment | null;
+  generatedImage?: GeneratedImage | null;
   onFeedbackSuccess?: () => void;
   // Chain props for identity network
   isConnected?: boolean;
@@ -22,6 +23,7 @@ export function FeedbackTab({
   lastEndpoint,
   lastPaymentTxHash,
   proofOfPayment,
+  generatedImage,
   onFeedbackSuccess,
   isConnected = false,
   isOnIdentityChain = false,
@@ -64,6 +66,7 @@ export function FeedbackTab({
         endpoint={lastEndpoint || undefined}
         paymentTxHash={lastPaymentTxHash || undefined}
         proofOfPayment={proofOfPayment || undefined}
+        generatedImage={generatedImage || undefined}
         onSuccess={onFeedbackSuccess}
         isOnCorrectChain={isOnIdentityChain}
       />

@@ -25,6 +25,14 @@ export interface ProofOfPayment {
   txHash: string;
 }
 
+// Generated image info
+export interface GeneratedImage {
+  ipfsHash: string;
+  ipfsUri: string;
+  httpUrl: string;
+  prompt: string;
+}
+
 /**
  * Home page for the ERC-8004 Agent Demo
  */
@@ -38,6 +46,8 @@ export default function Home() {
   const [lastProofOfPayment, setLastProofOfPayment] = useState<ProofOfPayment | null>(null);
   const [isTestingEndpoint, setIsTestingEndpoint] = useState(false);
   const [endpointError, setEndpointError] = useState<string | null>(null);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [lastGeneratedImage, setLastGeneratedImage] = useState<GeneratedImage | null>(null);
 
   // Use SWR hooks for agent identity and reputation
   const { agentId, isRegistered, network, rawMetadata, explorerUrl, isLoading: identityLoading, error: identityError } = useAgentIdentity();
@@ -219,6 +229,114 @@ export default function Home() {
     }
   };
 
+  // Generate image with x402 payment
+  const generateImageWithPayment = async (imagePrompt: string) => {
+    if (!isConnected) {
+      setEndpointError("Please connect your wallet first");
+      return;
+    }
+    
+    if (!isOnPaymentChain) {
+      setEndpointError(`Please switch to ${PAYMENT_CHAIN_NAME} network for payments`);
+      return;
+    }
+    
+    if (!walletClient) {
+      setEndpointError("Wallet client not available. Please ensure your wallet supports signing.");
+      return;
+    }
+
+    if (!imagePrompt.trim()) {
+      setEndpointError("Please enter a prompt for image generation");
+      return;
+    }
+
+    setIsGeneratingImage(true);
+    setEndpointError(null);
+    setPremiumResponse(null);
+
+    try {
+      // Create x402 client and register EVM scheme with wagmi signer
+      const signer = wagmiToClientSigner(walletClient);
+      const client = new x402Client()
+        .onPaymentCreationFailure(async context => {
+          console.error("[x402] Payment creation failed:", context.error);
+        });
+      
+      registerExactEvmScheme(client, { signer });
+
+      // Wrap fetch with payment handling
+      const fetchWithPayment = wrapFetchWithPayment(fetch, client);
+
+      const response = await fetchWithPayment("/api/agent/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          prompt: imagePrompt,
+          timestamp: new Date().toISOString()
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Request failed (${response.status}): ${errorText}`);
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const responseText = await response.text();
+        throw new Error(`Expected JSON response but got: ${responseText.substring(0, 100)}...`);
+      }
+
+      const data = await response.json();
+      
+      // Extract payment response using x402HTTPClient
+      const httpClient = new x402HTTPClient(client);
+      const paymentResponse = httpClient.getPaymentSettleResponse(
+        (name: string) => response.headers.get(name)
+      );
+
+      // Store generated image info
+      if (data.image) {
+        setLastGeneratedImage({
+          ipfsHash: data.image.ipfsHash,
+          ipfsUri: data.image.ipfsUri,
+          httpUrl: data.image.httpUrl,
+          prompt: imagePrompt,
+        });
+      }
+
+      const fullResponse = {
+        endpoint: "/api/agent/image (POST with x402)",
+        response: data,
+        ...(paymentResponse && { paymentResponse }),
+      };
+
+      setPremiumResponse(JSON.stringify(fullResponse, null, 2));
+      setLastEndpoint("/api/agent/image");
+      
+      // Extract full proof of payment from payment response if available
+      if (paymentResponse?.transaction) {
+        setLastPaymentTxHash(paymentResponse.transaction);
+        
+        const proofOfPayment: ProofOfPayment = {
+          fromAddress: paymentResponse.payer || "",
+          toAddress: process.env.NEXT_PUBLIC_AGENT_WALLET_ADDRESS || "(agent wallet)",
+          chainId: paymentResponse.network ? paymentResponse.network.split(":")[1] || String(PAYMENT_CHAIN_ID) : String(PAYMENT_CHAIN_ID),
+          txHash: paymentResponse.transaction,
+        };
+        setLastProofOfPayment(proofOfPayment);
+      }
+    } catch (error) {
+      console.error("Image generation request failed:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setEndpointError(errorMessage);
+      setPremiumResponse(null);
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
   // Handler for feedback submission - refreshes reputation data
   const handleFeedbackSuccess = () => {
     // Refresh reputation data after feedback is submitted
@@ -290,6 +408,9 @@ export default function Home() {
               onTestPremiumInfo={testPremiumInfo}
               onTestPremiumWithPayment={testPremiumWithPayment}
               onSwitchChain={handleSwitchToPaymentChain}
+              isGeneratingImage={isGeneratingImage}
+              lastGeneratedImage={lastGeneratedImage}
+              onGenerateImage={generateImageWithPayment}
             />
           )}
 
@@ -315,6 +436,7 @@ export default function Home() {
               lastEndpoint={lastEndpoint}
               lastPaymentTxHash={lastPaymentTxHash}
               proofOfPayment={lastProofOfPayment}
+              generatedImage={lastGeneratedImage}
               onFeedbackSuccess={handleFeedbackSuccess}
               isConnected={isConnected}
               isOnIdentityChain={isOnIdentityChain}

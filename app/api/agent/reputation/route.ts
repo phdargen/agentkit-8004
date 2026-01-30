@@ -68,16 +68,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     ]);
 
     // Transform feedback to a simpler format for the frontend
-    const transformedFeedback = feedback.map((f) => ({
-      id: f.id ? `${f.id[0]}:${f.id[1]}:${f.id[2]}` : `${f.agentId}:${f.reviewer}:0`,
-      reviewer: f.reviewer,
-      value: f.value ?? 0,
-      tags: f.tags || [],
-      text: f.text,
-      createdAt: f.createdAt,
-      endpoint: f.endpoint,
-      isRevoked: f.isRevoked,
-    }));
+    const transformedFeedback = feedback.map((f) => {
+      // Extract generatedImage from context if it exists there
+      const context = f.context as Record<string, unknown> | undefined;
+      const generatedImage = context?.generatedImage as Record<string, unknown> | undefined;
+      
+      return {
+        id: f.id ? `${f.id[0]}:${f.id[1]}:${f.id[2]}` : `${f.agentId}:${f.reviewer}:0`,
+        reviewer: f.reviewer,
+        value: f.value ?? 0,
+        tags: f.tags || [],
+        text: f.text,
+        createdAt: f.createdAt,
+        endpoint: f.endpoint,
+        isRevoked: f.isRevoked,
+        // Include rich metadata for display
+        proofOfPayment: f.proofOfPayment,
+        generatedImage,
+        context: f.context,
+        fileURI: f.fileURI,
+      };
+    });
 
     const response = {
       summary: {

@@ -5,13 +5,14 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagm
 import { REPUTATION_REGISTRY_ABI } from "@/lib/erc8004/abi";
 import { getRegistryAddress } from "@/actions/erc8004/constants";
 import { IDENTITY_CHAIN_ID, IDENTITY_CHAIN_NAME } from "../lib/wagmi-config";
-import type { ProofOfPayment } from "../page";
+import type { ProofOfPayment, GeneratedImage } from "../page";
 
 type FeedbackFormProps = {
   agentId: string | null;
   endpoint?: string;
   paymentTxHash?: string;
   proofOfPayment?: ProofOfPayment;
+  generatedImage?: GeneratedImage;
   onSuccess?: () => void;
   isOnCorrectChain?: boolean;
 };
@@ -21,7 +22,7 @@ type FeedbackFormProps = {
  * Users can rate agents on a 0-100 scale with optional tags
  * Note: Feedback is submitted on Sepolia (identity chain), not Base Sepolia (payment chain)
  */
-export function FeedbackForm({ agentId, endpoint, paymentTxHash, proofOfPayment, onSuccess, isOnCorrectChain = true }: FeedbackFormProps) {
+export function FeedbackForm({ agentId, endpoint, paymentTxHash, proofOfPayment, generatedImage, onSuccess, isOnCorrectChain = true }: FeedbackFormProps) {
   const { isConnected } = useAccount();
   const [score, setScore] = useState(80);
   const [tag1, setTag1] = useState("");
@@ -101,6 +102,7 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, proofOfPayment,
         endpoint,
         paymentTxHash,
         proofOfPayment,
+        generatedImage,
       }),
     });
 
@@ -263,6 +265,38 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, proofOfPayment,
               <code className="font-mono text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-800/30 px-1 rounded truncate">
                 {proofOfPayment.txHash.slice(0, 16)}...{proofOfPayment.txHash.slice(-8)}
               </code>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generated Image info (non-editable) */}
+      {generatedImage && (
+        <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800 space-y-2">
+          <h4 className="text-sm font-medium text-purple-800 dark:text-purple-200">
+            Generated Image (included in feedback)
+          </h4>
+          <div className="flex items-start gap-3">
+            <div className="w-16 h-16 rounded overflow-hidden flex-shrink-0">
+              <img
+                src={generatedImage.httpUrl}
+                alt={generatedImage.prompt}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-1 text-xs flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-purple-600 dark:text-purple-400 w-12 flex-shrink-0">IPFS:</span>
+                <code className="font-mono text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-800/30 px-1 rounded truncate">
+                  {generatedImage.ipfsHash}
+                </code>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-purple-600 dark:text-purple-400 w-12 flex-shrink-0">Prompt:</span>
+                <span className="text-purple-700 dark:text-purple-300 line-clamp-2">
+                  {generatedImage.prompt}
+                </span>
+              </div>
             </div>
           </div>
         </div>

@@ -3,6 +3,26 @@
 import useSWR from "swr";
 
 /**
+ * Proof of payment info from x402 payment response
+ */
+export type ProofOfPayment = {
+  fromAddress?: string;
+  toAddress?: string;
+  chainId?: string;
+  txHash?: string;
+};
+
+/**
+ * Generated image info stored with feedback
+ */
+export type GeneratedImage = {
+  ipfsHash?: string;
+  ipfsUri?: string;
+  httpUrl?: string;
+  prompt?: string;
+};
+
+/**
  * Feedback entry from the reputation API
  */
 export type FeedbackItem = {
@@ -22,6 +42,14 @@ export type FeedbackItem = {
   endpoint?: string;
   /** Whether the feedback has been revoked */
   isRevoked: boolean;
+  /** Proof of payment (x402) */
+  proofOfPayment?: ProofOfPayment;
+  /** Generated image info (stored directly or in context) */
+  generatedImage?: GeneratedImage;
+  /** Context data (may contain additional metadata) */
+  context?: Record<string, unknown>;
+  /** IPFS URI for the full feedback file */
+  fileURI?: string;
 };
 
 /**
