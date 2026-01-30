@@ -12,8 +12,22 @@ import { registerExactEvmScheme } from "@x402/evm/exact/server";
 const facilitatorUrl = process.env.X402_FACILITATOR_URL || "https://x402.org/facilitator";
 const facilitatorClient = new HTTPFacilitatorClient({ url: facilitatorUrl });
 
-// Create the x402 resource server
-export const server = new x402ResourceServer(facilitatorClient);
+// Create the x402 resource server with hooks
+export const server = new x402ResourceServer(facilitatorClient)
+  .onAfterVerify(async (context) => {
+    if (!context.result.isValid) {
+      console.log(`[x402] Payment verification failed: ${context.result.invalidReason} (payer: ${context.result.payer})`);
+    }
+  })
+  .onVerifyFailure(async (context) => {
+    console.error("[x402] Verify error:", context.error);
+  })
+  .onAfterSettle(async (context) => {
+    console.log(`[x402] Payment settled: ${context.result.transaction}`);
+  })
+  .onSettleFailure(async (context) => {
+    console.error("[x402] Settle error:", context.error);
+  });
 
 // Register the exact EVM payment scheme
 registerExactEvmScheme(server);
@@ -23,8 +37,13 @@ registerExactEvmScheme(server);
  */
 export function getDefaultPaymentConfig() {
   const chainId = parseInt(process.env.CHAIN_ID || "84532", 10);
-  const price = process.env.X402_PRICE || "$0.001";
+  let price = process.env.X402_PRICE || "$0.001";
   const payTo = process.env.AGENT_WALLET_ADDRESS || "";
+
+  // Ensure price has $ prefix (x402 requires USD format like "$0.001")
+  if (!price.startsWith("$")) {
+    price = `$${price}`;
+  }
 
   return {
     scheme: "exact" as const,

@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
+import { useAccount, useWalletClient, useSwitchChain } from "wagmi";
+import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
+import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { useAgent } from "./hooks/useAgent";
 import { useAgentIdentity } from "./hooks/useAgentIdentity";
-import ReactMarkdown from "react-markdown";
 import { WalletConnect } from "./components/WalletConnect";
-import { FeedbackForm } from "./components/FeedbackForm";
+import { ChatTab, EndpointsTab, FeedbackTab } from "./components/tabs";
+import { CHAIN_ID, CHAIN_NAME, wagmiToClientSigner } from "./lib/wagmi-config";
 
 /**
  * Home page for the ERC-8004 Agent Demo
@@ -17,19 +20,19 @@ export default function Home() {
   const [premiumResponse, setPremiumResponse] = useState<string | null>(null);
   const [lastEndpoint, setLastEndpoint] = useState<string | null>(null);
   const [lastPaymentTxHash, setLastPaymentTxHash] = useState<string | null>(null);
+  const [isTestingEndpoint, setIsTestingEndpoint] = useState(false);
+  const [endpointError, setEndpointError] = useState<string | null>(null);
 
   // Use SWR hook for agent identity
-  const { identity: agentIdentity, agentId, isRegistered, network, isLoading: identityLoading, error: identityError } = useAgentIdentity();
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  const { agentId, isRegistered, network, isLoading: identityLoading, error: identityError } = useAgentIdentity();
+  
+  // Wagmi hooks for wallet connection and signing
+  const { isConnected, chain } = useAccount();
+  const { data: walletClient } = useWalletClient();
+  const { switchChain, isPending: isSwitchingChain } = useSwitchChain();
+  
+  // Check if wallet is on the correct chain
+  const isOnCorrectChain = chain?.id === CHAIN_ID;
 
   const onSendMessage = async () => {
     if (!input.trim() || isThinking) return;
@@ -40,6 +43,10 @@ export default function Home() {
 
   // Test free endpoint
   const testFreeEndpoint = async () => {
+    setIsTestingEndpoint(true);
+    setEndpointError(null);
+    setPremiumResponse(null);
+    
     try {
       const res = await fetch("/api/agent");
       const data = await res.json();
@@ -47,20 +54,140 @@ export default function Home() {
       setLastEndpoint("/api/agent");
       setLastPaymentTxHash(null);
     } catch (error) {
-      setPremiumResponse(`Error: ${error}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setEndpointError(errorMessage);
+      setPremiumResponse(null);
+    } finally {
+      setIsTestingEndpoint(false);
     }
   };
 
   // Test premium endpoint info (GET - no payment)
   const testPremiumInfo = async () => {
+    setIsTestingEndpoint(true);
+    setEndpointError(null);
+    setPremiumResponse(null);
+    
     try {
       const res = await fetch("/api/agent/premium");
       const data = await res.json();
       setPremiumResponse(JSON.stringify(data, null, 2));
-      setLastEndpoint("/api/agent/premium");
+      setLastEndpoint("/api/agent/premium (GET)");
       setLastPaymentTxHash(null);
     } catch (error) {
-      setPremiumResponse(`Error: ${error}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setEndpointError(errorMessage);
+      setPremiumResponse(null);
+    } finally {
+      setIsTestingEndpoint(false);
+    }
+  };
+
+  // Handle chain switching
+  const handleSwitchChain = async () => {
+    try {
+      switchChain({ chainId: CHAIN_ID });
+    } catch (err) {
+      console.error("Failed to switch chain:", err);
+      setEndpointError(`Failed to switch to ${CHAIN_NAME}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // Test premium endpoint with x402 payment (POST - requires payment)
+  const testPremiumWithPayment = async () => {
+    if (!isConnected) {
+      setEndpointError("Please connect your wallet first");
+      return;
+    }
+    
+    if (!isOnCorrectChain) {
+      setEndpointError(`Please switch to ${CHAIN_NAME} network`);
+      return;
+    }
+    
+    if (!walletClient) {
+      setEndpointError("Wallet client not available. Please ensure your wallet supports signing.");
+      return;
+    }
+
+    setIsTestingEndpoint(true);
+    setEndpointError(null);
+    setPremiumResponse(null);
+
+    try {
+      // Create x402 client and register EVM scheme with wagmi signer
+      const signer = wagmiToClientSigner(walletClient);
+      const client = new x402Client()
+        .onPaymentCreationFailure(async context => {
+          console.error("[x402] Payment creation failed:", context.error);
+        });
+      
+      registerExactEvmScheme(client, { signer });
+
+      // Wrap fetch with payment handling
+      const fetchWithPayment = wrapFetchWithPayment(fetch, client);
+
+      const response = await fetchWithPayment("/api/agent/premium", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          input: "Test message from x402 payment flow",
+          timestamp: new Date().toISOString()
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Request failed (${response.status}): ${errorText}`);
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const responseText = await response.text();
+        throw new Error(`Expected JSON response but got: ${responseText.substring(0, 100)}...`);
+      }
+
+      const data = await response.json();
+      
+      // Extract payment response header if present
+      const paymentResponseHeader = response.headers.get("x-payment-response");
+      let paymentInfo = null;
+      
+      if (paymentResponseHeader) {
+        try {
+          if (paymentResponseHeader.startsWith("{") && paymentResponseHeader.endsWith("}")) {
+            paymentInfo = JSON.parse(paymentResponseHeader);
+          } else {
+            // Try base64 decode
+            const decoded = atob(paymentResponseHeader);
+            paymentInfo = JSON.parse(decoded);
+          }
+        } catch (decodeError) {
+          console.warn("Failed to decode payment response header:", decodeError);
+          paymentInfo = { raw: paymentResponseHeader };
+        }
+      }
+
+      const fullResponse = {
+        endpoint: "/api/agent/premium (POST with x402)",
+        response: data,
+        ...(paymentInfo && { paymentResponse: paymentInfo }),
+      };
+
+      setPremiumResponse(JSON.stringify(fullResponse, null, 2));
+      setLastEndpoint("/api/agent/premium");
+      
+      // Extract transaction hash from payment response if available
+      if (paymentInfo?.transaction) {
+        setLastPaymentTxHash(paymentInfo.transaction);
+      }
+    } catch (error) {
+      console.error("Premium endpoint request failed:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setEndpointError(errorMessage);
+      setPremiumResponse(null);
+    } finally {
+      setIsTestingEndpoint(false);
     }
   };
 
@@ -109,184 +236,45 @@ export default function Home() {
 
         {/* Tab Content */}
         <div className="p-4">
-          {/* Chat Tab */}
           {activeTab === "chat" && (
-            <div className="h-[50vh] flex flex-col">
-              <div className="flex-grow overflow-y-auto space-y-3 p-2">
-                {messages.length === 0 ? (
-                  <p className="text-center text-gray-500">
-                    Start chatting with the ERC-8004 Agent...
-                  </p>
-                ) : (
-                  messages.map((msg, index) => (
-                    <div
-                      key={index}
-                      className={`p-3 rounded-2xl shadow ${
-                        msg.sender === "user"
-                          ? "bg-[#0052FF] text-white self-end"
-                          : "bg-gray-100 dark:bg-gray-700 self-start"
-                      }`}
-                    >
-                      <ReactMarkdown
-                        components={{
-                          a: props => (
-                            <a
-                              {...props}
-                              className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            />
-                          ),
-                        }}
-                      >
-                        {msg.text}
-                      </ReactMarkdown>
-                    </div>
-                  ))
-                )}
-                {isThinking && (
-                  <div className="text-right mr-2 text-gray-500 italic">Thinking...</div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-              <div className="flex items-center space-x-2 mt-2">
-                <input
-                  type="text"
-                  className="flex-grow p-2 rounded border dark:bg-gray-700 dark:border-gray-600"
-                  placeholder="Type a message (try: 'get my agent identity' or 'register agent')..."
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && onSendMessage()}
-                  disabled={isThinking}
-                />
-                <button
-                  onClick={onSendMessage}
-                  className={`px-6 py-2 rounded-full font-semibold transition-all ${
-                    isThinking
-                      ? "bg-gray-300 cursor-not-allowed text-gray-500"
-                      : "bg-[#0052FF] hover:bg-[#003ECF] text-white shadow-md"
-                  }`}
-                  disabled={isThinking}
-                >
-                  Send
-                </button>
-              </div>
-            </div>
+            <ChatTab
+              messages={messages}
+              input={input}
+              isThinking={isThinking}
+              onInputChange={setInput}
+              onSendMessage={onSendMessage}
+            />
           )}
 
-          {/* Endpoints Tab */}
           {activeTab === "endpoints" && (
-            <div className="space-y-4">
-              {/* Agent Identity Info */}
-              <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                <h3 className="font-semibold mb-2">Agent Identity</h3>
-                {identityError ? (
-                  <div className="text-sm text-red-600 dark:text-red-400">
-                    <p>Error: {identityError.message}</p>
-                  </div>
-                ) : identityLoading ? (
-                  <p className="text-gray-500">Loading...</p>
-                ) : (
-                  <div className="text-sm space-y-1">
-                    <p>
-                      <span className="text-gray-500">Agent ID:</span>{" "}
-                      {agentId || "Not registered"}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Registered:</span>{" "}
-                      {isRegistered ? "Yes" : "No"}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Network:</span>{" "}
-                      {network || "Unknown"}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Test Buttons */}
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={testFreeEndpoint}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                >
-                  Test Free Endpoint
-                </button>
-                <button
-                  onClick={testPremiumInfo}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
-                >
-                  Premium Endpoint Info
-                </button>
-                <a
-                  href="/.well-known/agent-card.json"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                >
-                  View AgentCard
-                </a>
-              </div>
-
-              {/* Response Display */}
-              {premiumResponse && (
-                <div className="p-4 bg-gray-900 rounded-lg overflow-auto max-h-64">
-                  <pre className="text-sm text-green-400 font-mono whitespace-pre-wrap">
-                    {premiumResponse}
-                  </pre>
-                </div>
-              )}
-
-              {/* Endpoint Documentation */}
-              <div className="mt-4 space-y-2 text-sm">
-                <h4 className="font-semibold">Available Endpoints:</h4>
-                <ul className="space-y-1 text-gray-600 dark:text-gray-400">
-                  <li>
-                    <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">/api/agent</code> -
-                    Free agent interaction
-                  </li>
-                  <li>
-                    <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">
-                      /api/agent/premium
-                    </code>{" "}
-                    - x402 paid endpoint
-                  </li>
-                  <li>
-                    <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">
-                      /api/agent/identity
-                    </code>{" "}
-                    - Agent identity info
-                  </li>
-                  <li>
-                    <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">
-                      /.well-known/agent-card.json
-                    </code>{" "}
-                    - A2A AgentCard
-                  </li>
-                </ul>
-              </div>
-            </div>
+            <EndpointsTab
+              agentId={agentId}
+              isRegistered={isRegistered}
+              network={network}
+              identityLoading={identityLoading}
+              identityError={identityError}
+              isConnected={isConnected}
+              isOnCorrectChain={isOnCorrectChain}
+              chainName={CHAIN_NAME}
+              walletClient={walletClient}
+              isSwitchingChain={isSwitchingChain}
+              isTestingEndpoint={isTestingEndpoint}
+              endpointError={endpointError}
+              premiumResponse={premiumResponse}
+              lastPaymentTxHash={lastPaymentTxHash}
+              onTestFreeEndpoint={testFreeEndpoint}
+              onTestPremiumInfo={testPremiumInfo}
+              onTestPremiumWithPayment={testPremiumWithPayment}
+              onSwitchChain={handleSwitchChain}
+            />
           )}
 
-          {/* Feedback Tab */}
           {activeTab === "feedback" && (
-            <div className="space-y-4">
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-2">
-                  ERC-8004 Reputation Feedback
-                </h3>
-                <p className="text-sm text-blue-700 dark:text-blue-300">
-                  Submit on-chain feedback for the agent. Your feedback is recorded on the ERC-8004
-                  Reputation Registry and helps build the agent&apos;s reputation score.
-                </p>
-              </div>
-
-              <FeedbackForm
-                agentId={agentId}
-                endpoint={lastEndpoint || undefined}
-                paymentTxHash={lastPaymentTxHash || undefined}
-              />
-            </div>
+            <FeedbackTab
+              agentId={agentId}
+              lastEndpoint={lastEndpoint}
+              lastPaymentTxHash={lastPaymentTxHash}
+            />
           )}
         </div>
       </div>
