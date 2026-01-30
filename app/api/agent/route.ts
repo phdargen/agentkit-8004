@@ -93,11 +93,14 @@ export async function POST(
     }
 
     // 5️. Return the final response with optional generateImage flag
-    const response: AgentResponse = { response: agentResponse };
+    // If image generation was requested, return a fixed confirmation message instead of the agent's response
     if (generateImageRequest) {
-      response.generateImage = generateImageRequest;
+      return NextResponse.json({
+        response: "🎨 Image generation is a paid service. Please confirm payment to proceed.",
+        generateImage: generateImageRequest,
+      } as AgentResponse);
     }
-    return NextResponse.json(response);
+    return NextResponse.json({ response: agentResponse } as AgentResponse);
   } catch (error) {
     console.error("Error processing request:", error);
     return NextResponse.json({

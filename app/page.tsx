@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAccount, useWalletClient, useSwitchChain } from "wagmi";
 import { x402Client, wrapFetchWithPayment, x402HTTPClient } from "@x402/fetch";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
@@ -49,6 +49,8 @@ export default function Home() {
   const [lastGeneratedImage, setLastGeneratedImage] = useState<GeneratedImage | null>(null);
   // Pending image prompt - stored when user needs to switch chains before generating
   const [pendingImagePrompt, setPendingImagePrompt] = useState<string | null>(null);
+  // Track if pending image was triggered from chat (to add chat messages on completion)
+  const [pendingImageFromChat, setPendingImageFromChat] = useState(false);
 
   // Use SWR hooks for agent identity and reputation
   const { agentId, isRegistered, network, rawMetadata, explorerUrl, isLoading: identityLoading, error: identityError } = useAgentIdentity();
@@ -64,24 +66,16 @@ export default function Home() {
   // Check if wallet is on the correct chain for identity/reputation (Sepolia)
   const isOnIdentityChain = chain?.id === IDENTITY_CHAIN_ID;
 
-  // Ref to store the latest generateImageWithPayment function
-  const generateImageRef = useRef<((prompt: string) => void) | null>(null);
-
-  // Stable callback for useAgent that calls the ref
-  const handleAgentImageRequest = useCallback((prompt: string) => {
-    console.log("[handleAgentImageRequest] Called with prompt:", prompt);
-    console.log("[handleAgentImageRequest] generateImageRef.current:", !!generateImageRef.current);
-    if (generateImageRef.current) {
-      generateImageRef.current(prompt);
-    } else {
-      console.error("[handleAgentImageRequest] generateImageRef.current is null!");
-    }
-  }, []);
-
-  // Initialize agent with image generation callback
-  const { messages, sendMessage, isThinking } = useAgent({
-    onGenerateImage: handleAgentImageRequest,
-  });
+  // Initialize agent hook (no longer auto-triggers image generation)
+  const { 
+    messages, 
+    sendMessage, 
+    isThinking, 
+    pendingImageRequest, 
+    confirmPendingImage, 
+    cancelPendingImage,
+    addAgentMessage
+  } = useAgent();
 
   const onSendMessage = async () => {
     if (!input.trim() || isThinking) return;
@@ -250,7 +244,8 @@ export default function Home() {
   };
 
   // Generate image with x402 payment
-  const generateImageWithPayment = async (imagePrompt: string) => {
+  // Returns: GeneratedImage on success, "pending" if chain switch needed, null on error
+  const generateImageWithPayment = async (imagePrompt: string): Promise<GeneratedImage | "pending" | null> => {
     console.log("[generateImageWithPayment] Called with prompt:", imagePrompt);
     console.log("[generateImageWithPayment] isConnected:", isConnected);
     console.log("[generateImageWithPayment] isOnPaymentChain:", isOnPaymentChain);
@@ -259,7 +254,7 @@ export default function Home() {
     if (!isConnected) {
       console.log("[generateImageWithPayment] Not connected, showing error");
       setEndpointError("Please connect your wallet first to generate images");
-      return;
+      return null;
     }
     
     if (!isOnPaymentChain) {
@@ -268,24 +263,25 @@ export default function Home() {
       setPendingImagePrompt(imagePrompt);
       try {
         switchChain({ chainId: PAYMENT_CHAIN_ID });
+        return "pending"; // Chain switch in progress
       } catch (err) {
         console.error("Failed to switch chain:", err);
         setEndpointError(`Failed to switch to ${PAYMENT_CHAIN_NAME}: ${err instanceof Error ? err.message : String(err)}`);
         setPendingImagePrompt(null);
+        return null;
       }
-      return;
     }
     
     if (!walletClient) {
       console.log("[generateImageWithPayment] No wallet client, showing error");
       setEndpointError("Wallet client not available. Please ensure your wallet supports signing.");
-      return;
+      return null;
     }
 
     if (!imagePrompt.trim()) {
       console.log("[generateImageWithPayment] Empty prompt, showing error");
       setEndpointError("Please enter a prompt for image generation");
-      return;
+      return null;
     }
 
     console.log("[generateImageWithPayment] All checks passed, initiating payment flow");
@@ -365,29 +361,73 @@ export default function Home() {
         };
         setLastProofOfPayment(proofOfPayment);
       }
+      // Return the generated image data for callers that need it
+      return data.image ? {
+        ipfsHash: data.image.ipfsHash,
+        ipfsUri: data.image.ipfsUri,
+        httpUrl: data.image.httpUrl,
+        prompt: imagePrompt,
+      } : null;
     } catch (error) {
       console.error("Image generation request failed:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       setEndpointError(errorMessage);
       setPremiumResponse(null);
+      return null;
     } finally {
       setIsGeneratingImage(false);
     }
   };
 
-  // Keep the ref updated with the latest generateImageWithPayment function
-  // Setting directly during render is safe for refs
-  generateImageRef.current = generateImageWithPayment;
+  // Wrapper for image generation that adds chat messages on completion
+  const generateImageWithPaymentAndChatUpdate = async (imagePrompt: string) => {
+    const result = await generateImageWithPayment(imagePrompt);
+    if (result === "pending") {
+      // Chain switch was triggered, don't show message yet
+      // The useEffect will resume generation after chain switch
+      return;
+    }
+    if (result) {
+      // Success - add message with image to chat
+      addAgentMessage(`✅ Image generated successfully!\n\n![Generated Image](${result.httpUrl})`);
+    } else {
+      // Error occurred
+      addAgentMessage("❌ Image generation failed. Please try again.");
+    }
+  };
+
+  // Handler for confirming pending image generation from chat
+  const handleConfirmPendingImage = useCallback(() => {
+    const prompt = confirmPendingImage();
+    if (prompt) {
+      console.log("[handleConfirmPendingImage] Triggering image generation with prompt:", prompt);
+      // Add generating message to chat
+      addAgentMessage("⏳ Generating image... Please confirm the transaction in your wallet.");
+      // Mark that this was triggered from chat (for chain switch handling)
+      setPendingImageFromChat(true);
+      // Trigger the payment flow, with chat message on completion
+      generateImageWithPaymentAndChatUpdate(prompt);
+    }
+  }, [confirmPendingImage, addAgentMessage]);
 
   // Resume image generation after chain switch completes
   useEffect(() => {
     if (pendingImagePrompt && isOnPaymentChain && walletClient && !isSwitchingChain) {
       console.log("[useEffect] Chain switch complete, resuming image generation");
       const prompt = pendingImagePrompt;
+      const fromChat = pendingImageFromChat;
       setPendingImagePrompt(null);
-      generateImageWithPayment(prompt);
+      setPendingImageFromChat(false);
+      
+      if (fromChat) {
+        // Triggered from chat - use wrapper that adds chat messages
+        generateImageWithPaymentAndChatUpdate(prompt);
+      } else {
+        // Triggered from direct UI - no chat messages
+        generateImageWithPayment(prompt);
+      }
     }
-  }, [isOnPaymentChain, walletClient, isSwitchingChain, pendingImagePrompt]);
+  }, [isOnPaymentChain, walletClient, isSwitchingChain, pendingImagePrompt, pendingImageFromChat]);
 
   // Handler for feedback submission - refreshes reputation data
   const handleFeedbackSuccess = () => {
@@ -463,6 +503,9 @@ export default function Home() {
               isGeneratingImage={isGeneratingImage}
               lastGeneratedImage={lastGeneratedImage}
               onGenerateImage={generateImageWithPayment}
+              pendingImageRequest={pendingImageRequest}
+              onConfirmPendingImage={handleConfirmPendingImage}
+              onCancelPendingImage={cancelPendingImage}
             />
           )}
 

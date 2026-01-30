@@ -15,6 +15,10 @@ interface GeneratedImage {
   prompt: string;
 }
 
+interface PendingImageRequest {
+  prompt: string;
+}
+
 interface ChatTabProps {
   messages: Message[];
   input: string;
@@ -39,6 +43,10 @@ interface ChatTabProps {
   isGeneratingImage?: boolean;
   lastGeneratedImage?: GeneratedImage | null;
   onGenerateImage?: (prompt: string) => void;
+  // Agent-triggered image generation (pending confirmation)
+  pendingImageRequest?: PendingImageRequest | null;
+  onConfirmPendingImage?: () => void;
+  onCancelPendingImage?: () => void;
 }
 
 export function ChatTab({
@@ -65,6 +73,10 @@ export function ChatTab({
   isGeneratingImage = false,
   lastGeneratedImage,
   onGenerateImage,
+  // Agent-triggered image generation
+  pendingImageRequest,
+  onConfirmPendingImage,
+  onCancelPendingImage,
 }: ChatTabProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isEndpointsExpanded, setIsEndpointsExpanded] = useState(false);
@@ -386,6 +398,71 @@ export function ChatTab({
           {isThinking && (
             <div className="text-right mr-2 text-gray-500 italic">Thinking...</div>
           )}
+          
+          {/* Pending Image Generation Confirmation */}
+          {pendingImageRequest && !isGeneratingImage && (
+            <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 border border-purple-200 dark:border-purple-700 rounded-lg space-y-3">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">🎨</span>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-800 dark:text-gray-200">
+                    Ready to generate your image
+                  </p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    Prompt: &quot;{pendingImageRequest.prompt.length > 100 
+                      ? pendingImageRequest.prompt.substring(0, 100) + "..." 
+                      : pendingImageRequest.prompt}&quot;
+                  </p>
+                </div>
+              </div>
+              
+              {/* Wallet/Chain warnings */}
+              {!isConnected && (
+                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded text-sm text-yellow-700 dark:text-yellow-300">
+                  Please connect your wallet to proceed with payment.
+                </div>
+              )}
+              
+              {isConnected && !isOnCorrectChain && (
+                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-700 rounded text-sm text-orange-700 dark:text-orange-300 flex items-center justify-between">
+                  <span>Please switch to {chainName} for payment.</span>
+                  {onSwitchChain && (
+                    <button
+                      onClick={onSwitchChain}
+                      disabled={isSwitchingChain}
+                      className="px-2 py-1 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white text-xs rounded"
+                    >
+                      {isSwitchingChain ? "Switching..." : "Switch"}
+                    </button>
+                  )}
+                </div>
+              )}
+              
+              {/* Action buttons */}
+              <div className="flex gap-2 justify-end">
+                {onCancelPendingImage && (
+                  <button
+                    onClick={onCancelPendingImage}
+                    className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
+                {onConfirmPendingImage && (
+                  <button
+                    onClick={onConfirmPendingImage}
+                    disabled={!isConnected || !isOnCorrectChain || !walletClient}
+                    className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-all flex items-center gap-2"
+                    title={!isConnected ? "Connect wallet first" : !isOnCorrectChain ? `Switch to ${chainName} first` : "Confirm payment and generate image"}
+                  >
+                    <span>💳</span>
+                    Pay & Generate
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          
           <div ref={messagesEndRef} />
         </div>
         <div className="flex items-center space-x-2 mt-2">

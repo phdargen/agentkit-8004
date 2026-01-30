@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { AgentRequest, AgentResponse } from "../types/api";
 
 /**
- * Options for the useAgent hook
+ * Pending image request awaiting user confirmation
  */
-interface UseAgentOptions {
-  /** Callback triggered when the agent requests image generation */
-  onGenerateImage?: (prompt: string) => void;
+export interface PendingImageRequest {
+  prompt: string;
 }
 
 /**
@@ -45,20 +44,24 @@ async function messageAgent(userMessage: string): Promise<AgentResponse | null> 
  * - `sendMessage(input)` sends a message to `/api/agent` and updates state.
  * - `messages` stores the chat history.
  * - `isThinking` tracks whether the agent is processing a response.
- * - If the agent returns a `generateImage` flag, the `onGenerateImage` callback is triggered.
+ * - If the agent returns a `generateImage` flag, it stores the pending prompt for user confirmation.
+ * - `confirmPendingImage()` triggers the payment flow, `cancelPendingImage()` dismisses it.
  *
  * #### See Also
  * - The API logic in `/api/agent.ts`
  *
- * @param {UseAgentOptions} options - Optional configuration for the hook.
  * @returns {object} An object containing:
  * - `messages`: The conversation history.
  * - `sendMessage`: A function to send a new message.
  * - `isThinking`: Boolean indicating if the agent is processing a response.
+ * - `pendingImageRequest`: The pending image generation request awaiting confirmation, or null.
+ * - `confirmPendingImage`: Callback to confirm the pending image request (returns the prompt).
+ * - `cancelPendingImage`: Callback to cancel the pending image request.
  */
-export function useAgent(options?: UseAgentOptions) {
+export function useAgent() {
   const [messages, setMessages] = useState<{ text: string; sender: "user" | "agent" }[]>([]);
   const [isThinking, setIsThinking] = useState(false);
+  const [pendingImageRequest, setPendingImageRequest] = useState<PendingImageRequest | null>(null);
 
   /**
    * Sends a user message, updates local state, and retrieves the agent's response.
@@ -79,20 +82,52 @@ export function useAgent(options?: UseAgentOptions) {
         setMessages(prev => [...prev, { text: responseMessage, sender: "agent" }]);
       }
 
-      // Check for image generation request and trigger callback
+      // Check for image generation request - store it for user confirmation
       if (data.generateImage?.prompt) {
-        console.log("[useAgent] Image generation request detected:", data.generateImage.prompt);
-        if (options?.onGenerateImage) {
-          console.log("[useAgent] Calling onGenerateImage callback");
-          options.onGenerateImage(data.generateImage.prompt);
-        } else {
-          console.warn("[useAgent] No onGenerateImage callback provided");
-        }
+        console.log("[useAgent] Image generation request detected, awaiting confirmation:", data.generateImage.prompt);
+        setPendingImageRequest({ prompt: data.generateImage.prompt });
       }
     }
 
     setIsThinking(false);
   };
 
-  return { messages, sendMessage, isThinking };
+  /**
+   * Confirms the pending image request and returns the prompt.
+   * The caller should use the returned prompt to trigger the payment flow.
+   */
+  const confirmPendingImage = useCallback((): string | null => {
+    if (!pendingImageRequest) return null;
+    const prompt = pendingImageRequest.prompt;
+    setPendingImageRequest(null);
+    return prompt;
+  }, [pendingImageRequest]);
+
+  /**
+   * Cancels the pending image request.
+   */
+  const cancelPendingImage = useCallback(() => {
+    if (pendingImageRequest) {
+      setMessages(prev => [...prev, { text: "Image generation cancelled.", sender: "agent" }]);
+    }
+    setPendingImageRequest(null);
+  }, [pendingImageRequest]);
+
+  /**
+   * Adds a message to the chat from the agent.
+   * Useful for external components to add status messages.
+   */
+  const addAgentMessage = useCallback((text: string) => {
+    setMessages(prev => [...prev, { text, sender: "agent" }]);
+  }, []);
+
+  return { 
+    messages, 
+    sendMessage, 
+    isThinking, 
+    pendingImageRequest, 
+    confirmPendingImage, 
+    cancelPendingImage,
+    addAgentMessage
+  };
 }
