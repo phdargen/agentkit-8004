@@ -7,7 +7,7 @@ export const RegisterAgentSchema = z
   .object({
     agentURI: z
       .string()
-      .describe("The URI pointing to the agent's metadata (e.g., https://example.com/.well-known/agent-metadata.json)"),
+      .describe("The URI pointing to the agent's metadata (e.g., ipfs://QmXxx... or https://example.com/metadata.json)"),
   })
   .strip()
   .describe("Instructions for registering a new agent identity");

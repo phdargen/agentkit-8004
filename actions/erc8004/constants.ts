@@ -143,3 +143,29 @@ export const DEFAULT_NETWORK_ID = "base-sepolia";
 export function getChainIdFromNetworkId(networkId: string): number {
   return NETWORK_ID_TO_CHAIN_ID[networkId] ?? DEFAULT_CHAIN_ID;
 }
+
+/**
+ * Mapping from chain IDs to network names (for 8004scan URLs)
+ */
+export const CHAIN_ID_TO_NETWORK_NAME: Record<number, string> = {
+  84532: "base-sepolia",
+  11155111: "ethereum-sepolia",
+};
+
+/**
+ * Get network name from chain ID (e.g., 84532 -> "base-sepolia")
+ */
+export function getNetworkNameFromChainId(chainId: number): string | undefined {
+  return CHAIN_ID_TO_NETWORK_NAME[chainId];
+}
+
+/**
+ * Get 8004scan URL for an agent
+ */
+export function get8004ScanUrl(chainId: number, agentId: string): string | null {
+  const networkName = getNetworkNameFromChainId(chainId);
+  if (!networkName) {
+    return null;
+  }
+  return `https://www.8004scan.io/agents/${networkName}/${agentId}`;
+}

@@ -228,7 +228,7 @@ export const erc8004ActionProvider = () =>
 This creates an on-chain identity for the agent by minting an NFT.
 
 It takes the following input:
-- agentURI: The URI pointing to the agent's metadata (e.g., https://example.com/.well-known/agent-metadata.json)
+- agentURI: The URI pointing to the agent's metadata (e.g., ipfs://QmXxx... or https://example.com/metadata.json)
 
 Returns the agent ID (token ID) and transaction hash.`,
       schema: RegisterAgentSchema,

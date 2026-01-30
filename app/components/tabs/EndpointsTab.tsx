@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 interface EndpointsTabProps {
   agentId: string | null;
   isRegistered: boolean;
@@ -15,6 +17,8 @@ interface EndpointsTabProps {
   endpointError: string | null;
   premiumResponse: string | null;
   lastPaymentTxHash: string | null;
+  rawMetadata: Record<string, unknown> | null;
+  explorerUrl: string | null;
   onTestFreeEndpoint: () => void;
   onTestPremiumInfo: () => void;
   onTestPremiumWithPayment: () => void;
@@ -36,11 +40,15 @@ export function EndpointsTab({
   endpointError,
   premiumResponse,
   lastPaymentTxHash,
+  rawMetadata,
+  explorerUrl,
   onTestFreeEndpoint,
   onTestPremiumInfo,
   onTestPremiumWithPayment,
   onSwitchChain,
 }: EndpointsTabProps) {
+  const [showRawMetadata, setShowRawMetadata] = useState(false);
+
   return (
     <div className="space-y-4">
       {/* Agent Identity Info */}
@@ -59,12 +67,53 @@ export function EndpointsTab({
               {agentId || "Not registered"}
             </p>
             <p>
-              <span className="text-gray-500">Registered:</span>{" "}
-              {isRegistered ? "Yes" : "No"}
-            </p>
-            <p>
               <span className="text-gray-500">Network:</span>{" "}
               {network || "Unknown"}
+            </p>
+            {explorerUrl && (
+              <p>
+                <span className="text-gray-500">Explorer:</span>{" "}
+                <a
+                  href={explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:text-blue-600 hover:underline"
+                >
+                  View on 8004scan
+                </a>
+              </p>
+            )}
+          </div>
+        )}
+        
+        {/* View Registration Metadata Button */}
+        {isRegistered && !identityLoading && (
+          <button
+            onClick={() => setShowRawMetadata(!showRawMetadata)}
+            className="mt-3 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+          >
+            {showRawMetadata ? "Hide IPFS Metadata" : "View IPFS Metadata"}
+          </button>
+        )}
+        
+        {/* Raw Metadata Display */}
+        {showRawMetadata && rawMetadata && (
+          <div className="mt-3 p-3 bg-gray-900 rounded-lg overflow-auto max-h-96">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-400 font-medium">
+                Raw IPFS Metadata
+              </span>
+            </div>
+            <pre className="text-sm text-cyan-400 font-mono whitespace-pre-wrap">
+              {JSON.stringify(rawMetadata, null, 2)}
+            </pre>
+          </div>
+        )}
+        
+        {showRawMetadata && !rawMetadata && (
+          <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+            <p className="text-sm text-yellow-700 dark:text-yellow-300">
+              No metadata available. The agent may not have metadata stored on IPFS.
             </p>
           </div>
         )}
@@ -119,14 +168,6 @@ export function EndpointsTab({
         >
           {isTestingEndpoint ? "Processing..." : "Premium with Payment (POST)"}
         </button>
-        <a
-          href="/.well-known/agent-card.json"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-        >
-          View AgentCard
-        </a>
       </div>
 
       {/* Error Display */}
@@ -173,12 +214,6 @@ export function EndpointsTab({
               /api/agent/identity
             </code>{" "}
             - Agent identity info
-          </li>
-          <li>
-            <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">
-              /.well-known/agent-card.json
-            </code>{" "}
-            - A2A AgentCard
           </li>
         </ul>
       </div>

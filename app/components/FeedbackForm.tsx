@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { keccak256, toHex } from "viem";
 import { REPUTATION_REGISTRY_ABI } from "@/actions/erc8004/abis";
 import { getRegistryAddress } from "@/actions/erc8004/constants";
 import { CHAIN_ID } from "../lib/wagmi-config";
@@ -17,11 +18,11 @@ type FeedbackFormProps = {
  * Users can rate agents on a 0-100 scale with optional tags
  */
 export function FeedbackForm({ agentId, endpoint, paymentTxHash }: FeedbackFormProps) {
-  const { address, isConnected } = useAccount();
+  const { isConnected } = useAccount();
   const [score, setScore] = useState(80);
   const [tag1, setTag1] = useState("");
   const [tag2, setTag2] = useState("");
-  const [feedbackURI, setFeedbackURI] = useState("");
+  const [comment, setComment] = useState("");
 
   const reputationRegistry = getRegistryAddress("reputation", CHAIN_ID);
 
@@ -31,6 +32,21 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash }: FeedbackFormP
     hash,
   });
 
+  const generateFeedbackData = (): { uri: string; hash: `0x${string}` } => {
+    const feedbackData = {
+      comment: comment || "",
+      score,
+      tag1: tag1 || "",
+      tag2: tag2 || "",
+      timestamp: Date.now(),
+    };
+    const jsonString = JSON.stringify(feedbackData);
+    const feedbackHash = keccak256(toHex(jsonString));
+    const base64 = btoa(jsonString);
+    const uri = `data:application/json;base64,${base64}`;
+    return { uri, hash: feedbackHash };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -38,7 +54,7 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash }: FeedbackFormP
       return;
     }
 
-    const feedbackHash = "0x0000000000000000000000000000000000000000000000000000000000000000";
+    const { uri: feedbackURI, hash: feedbackHash } = generateFeedbackData();
 
     writeContract({
       address: reputationRegistry,
@@ -50,8 +66,8 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash }: FeedbackFormP
         tag1 || "",
         tag2 || "",
         endpoint || "",
-        feedbackURI || "",
-        feedbackHash as `0x${string}`,
+        feedbackURI,
+        feedbackHash,
       ],
     });
   };
@@ -122,15 +138,18 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash }: FeedbackFormP
         </div>
       </div>
 
-      {/* Optional feedback URI */}
+      {/* Optional comment */}
       <div>
-        <label className="block text-sm font-medium mb-1">Feedback URI (optional)</label>
-        <input
-          type="text"
-          value={feedbackURI}
-          onChange={e => setFeedbackURI(e.target.value)}
-          placeholder="ipfs://... or https://..."
-          className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+        <label className="block text-sm font-medium mb-1">
+          Comment (optional) <span className="text-gray-400 font-normal">{comment.length}/200</span>
+        </label>
+        <textarea
+          value={comment}
+          onChange={e => setComment(e.target.value)}
+          placeholder="Add a comment about your experience..."
+          rows={3}
+          maxLength={200}
+          className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 resize-none"
         />
       </div>
 

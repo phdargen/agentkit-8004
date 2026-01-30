@@ -40,11 +40,6 @@ export function getDefaultPaymentConfig() {
   let price = process.env.X402_PRICE || "$0.001";
   const payTo = process.env.AGENT_WALLET_ADDRESS || "";
 
-  // Ensure price has $ prefix (x402 requires USD format like "$0.001")
-  if (!price.startsWith("$")) {
-    price = `$${price}`;
-  }
-
   return {
     scheme: "exact" as const,
     price,

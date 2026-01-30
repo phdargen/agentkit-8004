@@ -4,10 +4,9 @@ An example AgentKit agent demonstrating the ERC-8004 trust protocol with x402 pa
 
 ## Features
 
-- **ERC-8004 Identity** - Agent registration on the Identity Registry (NFT-based)
+- **ERC-8004 Identity** - Agent registration on the Identity Registry (NFT-based) with IPFS metadata
 - **ERC-8004 Reputation** - User feedback system for agent reputation
 - **x402 Payments** - Paid premium endpoint using @x402/next
-- **AgentCard** - A2A-compatible agent discovery at `/.well-known/agent-card.json`
 - **User Wallet** - wagmi integration for frontend wallet connectivity
 
 ## Architecture
@@ -46,7 +45,7 @@ An example AgentKit agent demonstrating the ERC-8004 trust protocol with x402 pa
 ### 1. Install dependencies
 
 ```bash
-yarn install
+pnpm install
 ```
 
 ### 2. Configure environment
@@ -54,21 +53,48 @@ yarn install
 Copy `.env.example` to `.env` and fill in your keys:
 
 ```bash
-cp .env.example .env
+pnpm .env.example .env
 ```
 
 Required environment variables:
 - `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` - CDP API credentials
 - `OPENAI_API_KEY` - OpenAI API key
+- `PINATA_JWT` - Pinata JWT for IPFS uploads (get from https://pinata.cloud)
 - `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` - WalletConnect project ID (optional)
 
 ### 3. Start the development server
 
 ```bash
-yarn dev
+pnpm dev
 ```
 
 Visit [http://localhost:3000](http://localhost:3000)
+
+## Agent Registration
+
+Before running the agent, you need to register it on the ERC-8004 Identity Registry:
+
+```bash
+# Register a new agent (mints NFT + uploads metadata to IPFS)
+pnpm register
+```
+
+The registration script will:
+1. Mint an agent NFT on the Identity Registry
+2. Generate ERC-8004 compliant metadata
+3. Upload metadata to IPFS via Pinata
+4. Set the IPFS URI on-chain
+
+After registration, add the output `AGENT_ID` to your `.env` file.
+
+### Updating Agent Metadata
+
+To update metadata for an existing agent:
+
+```bash
+# Update metadata for AGENT_ID from .env
+pnpm updateMetadata
+```
 
 ## API Endpoints
 
@@ -79,7 +105,6 @@ Visit [http://localhost:3000](http://localhost:3000)
 | `/api/agent/premium` | GET | Free | Premium endpoint info |
 | `/api/agent/premium` | POST | x402 | Paid agent interaction |
 | `/api/agent/identity` | GET | Free | Agent ERC-8004 identity |
-| `/.well-known/agent-card.json` | GET | Free | A2A AgentCard |
 
 ## ERC-8004 Actions
 
@@ -116,8 +141,6 @@ erc8004-agent/
 │   │       ├── identity/route.ts     # Agent identity info
 │   │       ├── create-agent.ts       # Agent initialization
 │   │       └── prepare-agentkit.ts   # AgentKit setup
-│   ├── .well-known/
-│   │   └── agent-card.json/route.ts  # AgentCard endpoint
 │   ├── components/
 │   │   ├── WalletConnect.tsx         # Wallet connector
 │   │   └── FeedbackForm.tsx          # Feedback submission
@@ -129,6 +152,9 @@ erc8004-agent/
 │   ├── providers/
 │   │   └── WagmiProvider.tsx         # React context provider
 │   └── page.tsx                      # Main UI
+├── scripts/
+│   ├── register.ts                   # Agent registration script
+│   └── updateMetadata.ts             # Metadata update script
 ├── actions/
 │   └── erc8004/                      # ERC-8004 action provider
 │       ├── erc8004ActionProvider.ts  # Main provider class
@@ -141,7 +167,7 @@ erc8004-agent/
 │   └── erc8004/                      # ERC-8004 utilities
 │       ├── identity.ts               # Identity registry client
 │       ├── reputation.ts             # Reputation registry client
-│       ├── bootstrap.ts              # Agent identity bootstrap
+│       ├── cache.ts                  # Agent identity & metadata cache
 │       └── types.ts                  # TypeScript types
 └── .env.example                      # Environment template
 ```

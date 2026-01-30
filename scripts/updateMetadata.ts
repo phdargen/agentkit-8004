@@ -1,26 +1,25 @@
 #!/usr/bin/env npx tsx
 /**
- * ERC-8004 Agent Registration Script
+ * ERC-8004 Agent Metadata Update Script
  *
- * This script registers your agent on the ERC-8004 Identity Registry.
- * Run this ONCE before deploying your agent.
+ * This script updates the metadata URI for an existing agent.
+ * Use this to update agent information after initial registration.
  *
  * Usage:
- *   pnpm register
+ *   pnpm updateMetadata
  *
  * Requirements:
  *   - CDP_API_KEY_ID and CDP_API_KEY_SECRET in .env
  *   - CDP_WALLET_SECRET in .env
  *   - AGENT_WALLET_ADDRESS in .env
+ *   - AGENT_ID in .env (the agent ID to update)
  *   - NETWORK_ID in .env (e.g., "base-sepolia")
  *   - PINATA_JWT in .env (for IPFS uploads)
- *   - AGENT_NAME, AGENT_DESCRIPTION (optional)
- *
- * After registration, add the output AGENT_ID to your .env file.
+ *   - AGENT_NAME, AGENT_DESCRIPTION, AGENT_IMAGE (optional)
  */
 
 import "dotenv/config";
-import { createPublicClient, http, decodeEventLog, encodeFunctionData, type Hex, type Chain } from "viem";
+import { createPublicClient, http, encodeFunctionData, type Hex, type Chain } from "viem";
 import { baseSepolia, sepolia } from "viem/chains";
 import { CdpEvmWalletProvider } from "@coinbase/agentkit";
 
@@ -221,7 +220,7 @@ async function uploadJsonToIPFS(pinataJwt: string, json: object, name: string): 
 // ============================================================================
 
 async function main() {
-  console.log("\n🚀 ERC-8004 Agent Registration\n");
+  console.log("\n📝 ERC-8004 Agent Metadata Update\n");
 
   // Validate environment
   const requiredEnvVars = [
@@ -229,6 +228,7 @@ async function main() {
     "CDP_API_KEY_SECRET",
     "CDP_WALLET_SECRET",
     "AGENT_WALLET_ADDRESS",
+    "AGENT_ID",
     "PINATA_JWT",
   ];
 
@@ -241,6 +241,8 @@ async function main() {
 
   const networkId = process.env.NETWORK_ID || DEFAULT_NETWORK_ID;
   const agentWalletAddress = process.env.AGENT_WALLET_ADDRESS as Hex;
+  const agentIdStr = process.env.AGENT_ID!;
+  const agentId = parseInt(agentIdStr, 10);
   const pinataJwt = process.env.PINATA_JWT!;
   const agentName = process.env.AGENT_NAME;
   const agentDescription = process.env.AGENT_DESCRIPTION;
@@ -250,6 +252,11 @@ async function main() {
   const baseUrl = process.env.AGENT_BASE_URL;
   // x402 support is determined by whether X402_PRICE is set
   const x402Support = !!process.env.X402_PRICE;
+
+  if (isNaN(agentId)) {
+    console.error(`❌ Invalid AGENT_ID: ${agentIdStr}`);
+    process.exit(1);
+  }
 
   // Get chain config from existing constants
   const chainId = getChainIdFromNetworkId(networkId);
@@ -262,19 +269,13 @@ async function main() {
     process.exit(1);
   }
 
-  // Check if already registered
-  if (process.env.AGENT_ID) {
-    console.log(`⚠️  AGENT_ID already set in .env: ${process.env.AGENT_ID}`);
-    console.log("   If you want to re-register, remove AGENT_ID from .env first.\n");
-    process.exit(0);
-  }
-
   console.log(`📋 Configuration:`);
   console.log(`   Network: ${networkId} (${chainId})`);
+  console.log(`   Agent ID: ${agentId}`);
   console.log(`   Wallet: ${agentWalletAddress}`);
   console.log(`   Registry: ${registryAddress}`);
-  console.log(`   Name: ${agentName || "(will use default)"}`);
-  console.log(`   Description: ${agentDescription || "(will use default)"}`);
+  console.log(`   Name: ${agentName || `Agent ${agentId}`}`);
+  console.log(`   Description: ${agentDescription || "(empty)"}`);
   console.log(`   x402 Support: ${x402Support}`);
   if (baseUrl) {
     console.log(`   Base URL: ${baseUrl}`);
@@ -310,69 +311,12 @@ async function main() {
     transport: http(process.env.RPC_URL),
   });
 
-  // Step 1: Mint agent NFT (register without URI)
-  console.log("\n📤 Step 1: Minting agent NFT...");
+  // Step 1: Generate and upload metadata to IPFS
+  console.log("\n📤 Step 1: Generating and uploading metadata to IPFS...");
 
   try {
-    // Encode the register call (with empty URI, will be set later)
-    const registerData = encodeFunctionData({
-      abi: IDENTITY_REGISTRY_ABI,
-      functionName: "register",
-      args: [""],
-    });
-
-    // Send mint transaction
-    const registerHash = await walletProvider.sendTransaction({
-      to: registryAddress,
-      data: registerData,
-    });
-
-    console.log(`   Transaction: ${explorer}/tx/${registerHash}`);
-    console.log("   Waiting for confirmation...");
-
-    // Wait for receipt
-    const registerReceipt = await publicClient.waitForTransactionReceipt({ hash: registerHash as Hex });
-
-    if (registerReceipt.status !== "success") {
-      console.error("\n❌ Mint transaction failed!");
-      process.exit(1);
-    }
-
-    // Parse the Registered event to get agentId
-    let agentId: string | null = null;
-
-    for (const log of registerReceipt.logs) {
-      if (log.address.toLowerCase() === registryAddress.toLowerCase()) {
-        try {
-          const decoded = decodeEventLog({
-            abi: IDENTITY_REGISTRY_ABI,
-            data: log.data,
-            topics: log.topics,
-          });
-
-          if (decoded.eventName === "Registered") {
-            agentId = (decoded.args as { agentId: bigint }).agentId.toString();
-            break;
-          }
-        } catch {
-          // Not the event we're looking for
-        }
-      }
-    }
-
-    if (!agentId) {
-      console.error("\n⚠️  Could not extract agentId from transaction logs");
-      console.error("   Check the transaction manually on the block explorer");
-      process.exit(1);
-    }
-
-    console.log(`   ✅ Agent NFT minted! Agent ID: ${agentId}`);
-
-    // Step 2: Generate and upload metadata to IPFS
-    console.log("\n📤 Step 2: Generating and uploading metadata to IPFS...");
-
     const registration = generateAgentRegistration({
-      agentId: parseInt(agentId, 10),
+      agentId,
       chainId,
       registryAddress,
       name: agentName,
@@ -402,8 +346,8 @@ async function main() {
     console.log(`   IPFS URI: ${ipfsUri}`);
     console.log(`   HTTP Gateway: ${httpUrl}`);
 
-    // Step 3: Set agent URI on-chain
-    console.log("\n📤 Step 3: Setting agent URI on-chain...");
+    // Step 2: Set agent URI on-chain
+    console.log("\n📤 Step 2: Setting agent URI on-chain...");
 
     const setUriData = encodeFunctionData({
       abi: IDENTITY_REGISTRY_ABI,
@@ -423,15 +367,13 @@ async function main() {
 
     if (setUriReceipt.status !== "success") {
       console.error("\n❌ Set URI transaction failed!");
-      console.error(`   Agent was minted successfully (ID: ${agentId}), but URI was not set.`);
-      console.error(`   You can set it later using the updateMetadata.ts script.`);
       process.exit(1);
     }
 
-    console.log(`   ✅ Agent URI set on-chain!`);
+    console.log(`   ✅ Agent URI updated on-chain!`);
 
     // Success!
-    console.log("\n✅ Registration complete!\n");
+    console.log("\n✅ Metadata update complete!\n");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log(`   Agent ID: ${agentId}`);
     console.log(`   Owner: ${walletAddress}`);
@@ -440,19 +382,15 @@ async function main() {
     console.log(`   Metadata URI: ${ipfsUri}`);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-    console.log("📝 Add this to your .env file:\n");
-    console.log(`   AGENT_ID=${agentId}\n`);
-
-    console.log("📋 Transactions:");
-    console.log(`   - Mint: ${explorer}/tx/${registerHash}`);
-    console.log(`   - Set URI: ${explorer}/tx/${setUriHash}\n`);
+    console.log("📋 Transaction:");
+    console.log(`   ${explorer}/tx/${setUriHash}\n`);
 
     const scanPath = networkId === "base-sepolia" ? "base-sepolia" : "eth-sepolia";
     console.log("🔗 View on 8004scan:");
     console.log(`   https://www.8004scan.io/agents/${scanPath}/${agentId}\n`);
 
   } catch (error) {
-    console.error("\n❌ Registration failed:", error);
+    console.error("\n❌ Metadata update failed:", error);
     process.exit(1);
   }
 }

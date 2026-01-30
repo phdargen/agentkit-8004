@@ -24,7 +24,7 @@ export default function Home() {
   const [endpointError, setEndpointError] = useState<string | null>(null);
 
   // Use SWR hook for agent identity
-  const { agentId, isRegistered, network, isLoading: identityLoading, error: identityError } = useAgentIdentity();
+  const { agentId, isRegistered, network, rawMetadata, explorerUrl, isLoading: identityLoading, error: identityError } = useAgentIdentity();
   
   // Wagmi hooks for wallet connection and signing
   const { isConnected, chain } = useAccount();
@@ -262,6 +262,8 @@ export default function Home() {
               endpointError={endpointError}
               premiumResponse={premiumResponse}
               lastPaymentTxHash={lastPaymentTxHash}
+              rawMetadata={rawMetadata}
+              explorerUrl={explorerUrl}
               onTestFreeEndpoint={testFreeEndpoint}
               onTestPremiumInfo={testPremiumInfo}
               onTestPremiumWithPayment={testPremiumWithPayment}

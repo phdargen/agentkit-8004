@@ -23,7 +23,6 @@ export async function GET(): Promise<NextResponse> {
       free: "/api/agent",
       premium: "/api/agent/premium",
       identity: "/api/agent/identity",
-      agentCard: "/.well-known/agent-card.json",
     },
   });
 }
