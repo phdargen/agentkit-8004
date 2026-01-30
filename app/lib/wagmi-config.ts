@@ -2,30 +2,51 @@
  * wagmi Configuration
  *
  * Basic wagmi setup for user wallet connectivity.
- * Configured for Base Sepolia testnet.
+ * 
+ * Two chains are used:
+ * - Base Sepolia (84532): x402 payments
+ * - Sepolia (11155111): Agent identity and reputation (ERC-8004)
  */
 
 import { http, createConfig } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { sepolia, baseSepolia } from "wagmi/chains";
 import { injected } from "wagmi/connectors";
 import type { WalletClient, Account } from "viem";
 import { getAddress } from "viem";
 import type { ClientEvmSigner } from "@x402/evm";
 
 export const wagmiConfig = createConfig({
-  chains: [sepolia],
+  chains: [sepolia, baseSepolia],
   connectors: [
     injected(),
   ],
   transports: {
     [sepolia.id]: http(),
+    [baseSepolia.id]: http(),
   },
 });
 
 /**
- * Export chain constants for use in components
+ * Chain constants for PAYMENTS (x402) - Base Sepolia
+ * The x402 server accepts payments on Base Sepolia
+ */
+export const PAYMENT_CHAIN_ID = baseSepolia.id;
+export const PAYMENT_CHAIN_NAME = baseSepolia.name;
+
+/**
+ * Chain constants for AGENT IDENTITY/REPUTATION - Sepolia
+ * ERC-8004 agent identity and reputation registries are on Sepolia
+ */
+export const IDENTITY_CHAIN_ID = sepolia.id;
+export const IDENTITY_CHAIN_NAME = sepolia.name;
+
+/**
+ * @deprecated Use PAYMENT_CHAIN_ID or IDENTITY_CHAIN_ID instead
  */
 export const CHAIN_ID = sepolia.id;
+/**
+ * @deprecated Use PAYMENT_CHAIN_NAME or IDENTITY_CHAIN_NAME instead
+ */
 export const CHAIN_NAME = sepolia.name;
 
 /**

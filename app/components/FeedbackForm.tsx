@@ -2,31 +2,38 @@
 
 import { useState, useEffect } from "react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { keccak256, toHex } from "viem";
 import { REPUTATION_REGISTRY_ABI } from "@/lib/erc8004/abi";
 import { getRegistryAddress } from "@/actions/erc8004/constants";
-import { CHAIN_ID } from "../lib/wagmi-config";
+import { IDENTITY_CHAIN_ID, IDENTITY_CHAIN_NAME } from "../lib/wagmi-config";
+import type { ProofOfPayment } from "../page";
 
 type FeedbackFormProps = {
   agentId: string | null;
   endpoint?: string;
   paymentTxHash?: string;
+  proofOfPayment?: ProofOfPayment;
   onSuccess?: () => void;
+  isOnCorrectChain?: boolean;
 };
 
 /**
  * FeedbackForm component for submitting reputation feedback
  * Users can rate agents on a 0-100 scale with optional tags
+ * Note: Feedback is submitted on Sepolia (identity chain), not Base Sepolia (payment chain)
  */
-export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: FeedbackFormProps) {
+export function FeedbackForm({ agentId, endpoint, paymentTxHash, proofOfPayment, onSuccess, isOnCorrectChain = true }: FeedbackFormProps) {
   const { isConnected } = useAccount();
   const [score, setScore] = useState(80);
   const [tag1, setTag1] = useState("");
   const [tag2, setTag2] = useState("");
   const [comment, setComment] = useState("");
   const [hasNotifiedSuccess, setHasNotifiedSuccess] = useState(false);
+  const [isPreparingFeedback, setIsPreparingFeedback] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [ipfsEnabled, setIpfsEnabled] = useState<boolean | null>(null);
 
-  const reputationRegistry = getRegistryAddress("reputation", CHAIN_ID);
+  // Use Sepolia (identity chain) for the reputation registry
+  const reputationRegistry = getRegistryAddress("reputation", IDENTITY_CHAIN_ID);
 
   const { data: hash, writeContract, isPending, error } = useWriteContract();
 
@@ -38,6 +45,23 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: Fe
       refetchInterval: 1000,
     },
   });
+
+  // Check if IPFS upload is enabled on mount
+  useEffect(() => {
+    async function checkIpfsStatus() {
+      try {
+        const response = await fetch("/api/feedback");
+        if (response.ok) {
+          const data = await response.json();
+          setIpfsEnabled(data.ipfsEnabled);
+        }
+      } catch {
+        // Silently fail - IPFS status is informational only
+        setIpfsEnabled(false);
+      }
+    }
+    checkIpfsStatus();
+  }, []);
 
   // Call onSuccess callback when feedback is successfully submitted
   useEffect(() => {
@@ -59,19 +83,38 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: Fe
     }
   }, [isPending]);
 
-  const generateFeedbackData = (): { uri: string; hash: `0x${string}` } => {
-    const feedbackData = {
-      comment: comment || "",
-      score,
-      tag1: tag1 || "",
-      tag2: tag2 || "",
-      timestamp: Date.now(),
+  /**
+   * Generates feedback URI and hash via the API
+   * The API will upload to IPFS if UPLOAD_FEEDBACK_TO_IPFS=true, otherwise returns a data URI
+   */
+  const generateFeedbackData = async (): Promise<{ uri: string; hash: `0x${string}`; uploadedToIpfs: boolean }> => {
+    const response = await fetch("/api/feedback", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        comment: comment || "",
+        score,
+        tag1: tag1 || "",
+        tag2: tag2 || "",
+        endpoint,
+        paymentTxHash,
+        proofOfPayment,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Failed to generate feedback data");
+    }
+
+    const data = await response.json();
+    return {
+      uri: data.uri,
+      hash: data.hash as `0x${string}`,
+      uploadedToIpfs: data.uploadedToIpfs,
     };
-    const jsonString = JSON.stringify(feedbackData);
-    const feedbackHash = keccak256(toHex(jsonString));
-    const base64 = btoa(jsonString);
-    const uri = `data:application/json;base64,${base64}`;
-    return { uri, hash: feedbackHash };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -81,23 +124,32 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: Fe
       return;
     }
 
-    const { uri: feedbackURI, hash: feedbackHash } = generateFeedbackData();
+    setIsPreparingFeedback(true);
+    setFeedbackError(null);
 
-    writeContract({
-      address: reputationRegistry,
-      abi: REPUTATION_REGISTRY_ABI,
-      functionName: "giveFeedback",
-      args: [
-        BigInt(agentId),
-        BigInt(score),  // value (int128)
-        0,              // valueDecimals (uint8)
-        tag1 || "",
-        tag2 || "",
-        endpoint || "",
-        feedbackURI,
-        feedbackHash,
-      ],
-    });
+    try {
+      const { uri: feedbackURI, hash: feedbackHash } = await generateFeedbackData();
+
+      writeContract({
+        address: reputationRegistry,
+        abi: REPUTATION_REGISTRY_ABI,
+        functionName: "giveFeedback",
+        args: [
+          BigInt(agentId),
+          BigInt(score),  // value (int128)
+          0,              // valueDecimals (uint8)
+          tag1 || "",
+          tag2 || "",
+          endpoint || "",
+          feedbackURI,
+          feedbackHash,
+        ],
+      });
+    } catch (err) {
+      setFeedbackError(err instanceof Error ? err.message : "Failed to prepare feedback");
+    } finally {
+      setIsPreparingFeedback(false);
+    }
   };
 
   if (!isConnected) {
@@ -181,12 +233,38 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: Fe
         />
       </div>
 
-      {/* Payment proof info */}
-      {paymentTxHash && (
-        <div className="p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
-          <p className="text-sm text-green-700 dark:text-green-300">
-            Payment proof: <code className="font-mono text-xs">{paymentTxHash.slice(0, 16)}...</code>
-          </p>
+      {/* Proof of Payment info (non-editable) */}
+      {proofOfPayment && (
+        <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 space-y-2">
+          <h4 className="text-sm font-medium text-green-800 dark:text-green-200">
+            Proof of Payment (included in feedback)
+          </h4>
+          <div className="grid grid-cols-1 gap-1 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-green-600 dark:text-green-400 w-16 flex-shrink-0">From:</span>
+              <code className="font-mono text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-800/30 px-1 rounded truncate">
+                {proofOfPayment.fromAddress || "N/A"}
+              </code>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-green-600 dark:text-green-400 w-16 flex-shrink-0">To:</span>
+              <code className="font-mono text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-800/30 px-1 rounded truncate">
+                {proofOfPayment.toAddress || "N/A"}
+              </code>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-green-600 dark:text-green-400 w-16 flex-shrink-0">Chain ID:</span>
+              <code className="font-mono text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-800/30 px-1 rounded">
+                {proofOfPayment.chainId}
+              </code>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-green-600 dark:text-green-400 w-16 flex-shrink-0">Tx Hash:</span>
+              <code className="font-mono text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-800/30 px-1 rounded truncate">
+                {proofOfPayment.txHash.slice(0, 16)}...{proofOfPayment.txHash.slice(-8)}
+              </code>
+            </div>
+          </div>
         </div>
       )}
 
@@ -197,17 +275,29 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: Fe
         </div>
       )}
 
+      {/* IPFS status indicator */}
+      {ipfsEnabled !== null && (
+        <div className={`flex items-center gap-2 text-xs ${ipfsEnabled ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400"}`}>
+          <span className={`w-2 h-2 rounded-full ${ipfsEnabled ? "bg-green-500" : "bg-gray-400"}`}></span>
+          {ipfsEnabled ? "Feedback will be stored on IPFS" : "Feedback stored as data URI"}
+        </div>
+      )}
+
       {/* Submit button */}
       <button
         type="submit"
-        disabled={isPending || isConfirming}
+        disabled={isPending || isConfirming || isPreparingFeedback || !isOnCorrectChain}
         className="w-full px-4 py-2 text-white bg-[#0052FF] hover:bg-[#003ECF] rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
       >
-        {isPending
-          ? "Confirm in wallet..."
-          : isConfirming
-            ? "Submitting..."
-            : "Submit Feedback"}
+        {!isOnCorrectChain
+          ? `Switch to ${IDENTITY_CHAIN_NAME} to submit`
+          : isPreparingFeedback
+            ? "Preparing feedback..."
+            : isPending
+              ? "Confirm in wallet..."
+              : isConfirming
+                ? "Submitting..."
+                : "Submit Feedback"}
       </button>
 
       {/* Status messages */}
@@ -216,6 +306,12 @@ export function FeedbackForm({ agentId, endpoint, paymentTxHash, onSuccess }: Fe
           <p className="text-sm text-green-700 dark:text-green-300">
             Feedback submitted! Tx: <code className="font-mono text-xs">{hash.slice(0, 16)}...</code>
           </p>
+        </div>
+      )}
+
+      {feedbackError && (
+        <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800">
+          <p className="text-sm text-red-700 dark:text-red-300">Error: {feedbackError}</p>
         </div>
       )}
 

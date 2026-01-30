@@ -2,14 +2,28 @@
 
 import { useState } from "react";
 import { useAccount, useWalletClient, useSwitchChain } from "wagmi";
-import { x402Client, wrapFetchWithPayment } from "@x402/fetch";
+import { x402Client, wrapFetchWithPayment, x402HTTPClient } from "@x402/fetch";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { useAgent } from "./hooks/useAgent";
 import { useAgentIdentity } from "./hooks/useAgentIdentity";
 import { useAgentReputation } from "./hooks/useAgentReputation";
 import { WalletConnect } from "./components/WalletConnect";
 import { ChatTab, ReputationTab, FeedbackTab } from "./components/tabs";
-import { CHAIN_ID, CHAIN_NAME, wagmiToClientSigner } from "./lib/wagmi-config";
+import { 
+  PAYMENT_CHAIN_ID, 
+  PAYMENT_CHAIN_NAME, 
+  IDENTITY_CHAIN_ID,
+  IDENTITY_CHAIN_NAME,
+  wagmiToClientSigner 
+} from "./lib/wagmi-config";
+
+// Proof of payment info extracted from x402 payment response
+export interface ProofOfPayment {
+  fromAddress: string;
+  toAddress: string;
+  chainId: string;
+  txHash: string;
+}
 
 /**
  * Home page for the ERC-8004 Agent Demo
@@ -21,6 +35,7 @@ export default function Home() {
   const [premiumResponse, setPremiumResponse] = useState<string | null>(null);
   const [lastEndpoint, setLastEndpoint] = useState<string | null>(null);
   const [lastPaymentTxHash, setLastPaymentTxHash] = useState<string | null>(null);
+  const [lastProofOfPayment, setLastProofOfPayment] = useState<ProofOfPayment | null>(null);
   const [isTestingEndpoint, setIsTestingEndpoint] = useState(false);
   const [endpointError, setEndpointError] = useState<string | null>(null);
 
@@ -33,8 +48,10 @@ export default function Home() {
   const { data: walletClient } = useWalletClient();
   const { switchChain, isPending: isSwitchingChain } = useSwitchChain();
   
-  // Check if wallet is on the correct chain
-  const isOnCorrectChain = chain?.id === CHAIN_ID;
+  // Check if wallet is on the correct chain for payments (Base Sepolia)
+  const isOnPaymentChain = chain?.id === PAYMENT_CHAIN_ID;
+  // Check if wallet is on the correct chain for identity/reputation (Sepolia)
+  const isOnIdentityChain = chain?.id === IDENTITY_CHAIN_ID;
 
   const onSendMessage = async () => {
     if (!input.trim() || isThinking) return;
@@ -55,6 +72,7 @@ export default function Home() {
       setPremiumResponse(JSON.stringify(data, null, 2));
       setLastEndpoint("/api/agent");
       setLastPaymentTxHash(null);
+      // Don't clear proof of payment for free endpoint - keep last payment info
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       setEndpointError(errorMessage);
@@ -76,6 +94,7 @@ export default function Home() {
       setPremiumResponse(JSON.stringify(data, null, 2));
       setLastEndpoint("/api/agent/premium (GET)");
       setLastPaymentTxHash(null);
+      // Don't clear proof of payment for GET - keep last payment info
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       setEndpointError(errorMessage);
@@ -85,13 +104,22 @@ export default function Home() {
     }
   };
 
-  // Handle chain switching
-  const handleSwitchChain = async () => {
+  // Handle chain switching for payments (to Base Sepolia)
+  const handleSwitchToPaymentChain = async () => {
     try {
-      switchChain({ chainId: CHAIN_ID });
+      switchChain({ chainId: PAYMENT_CHAIN_ID });
     } catch (err) {
       console.error("Failed to switch chain:", err);
-      setEndpointError(`Failed to switch to ${CHAIN_NAME}: ${err instanceof Error ? err.message : String(err)}`);
+      setEndpointError(`Failed to switch to ${PAYMENT_CHAIN_NAME}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // Handle chain switching for identity/reputation (to Sepolia)
+  const handleSwitchToIdentityChain = async () => {
+    try {
+      switchChain({ chainId: IDENTITY_CHAIN_ID });
+    } catch (err) {
+      console.error("Failed to switch chain:", err);
     }
   };
 
@@ -102,8 +130,8 @@ export default function Home() {
       return;
     }
     
-    if (!isOnCorrectChain) {
-      setEndpointError(`Please switch to ${CHAIN_NAME} network`);
+    if (!isOnPaymentChain) {
+      setEndpointError(`Please switch to ${PAYMENT_CHAIN_NAME} network for payments`);
       return;
     }
     
@@ -151,37 +179,35 @@ export default function Home() {
 
       const data = await response.json();
       
-      // Extract payment response header if present
-      const paymentResponseHeader = response.headers.get("x-payment-response");
-      let paymentInfo = null;
-      
-      if (paymentResponseHeader) {
-        try {
-          if (paymentResponseHeader.startsWith("{") && paymentResponseHeader.endsWith("}")) {
-            paymentInfo = JSON.parse(paymentResponseHeader);
-          } else {
-            // Try base64 decode
-            const decoded = atob(paymentResponseHeader);
-            paymentInfo = JSON.parse(decoded);
-          }
-        } catch (decodeError) {
-          console.warn("Failed to decode payment response header:", decodeError);
-          paymentInfo = { raw: paymentResponseHeader };
-        }
-      }
+      // Extract payment response using x402HTTPClient
+      const httpClient = new x402HTTPClient(client);
+      const paymentResponse = httpClient.getPaymentSettleResponse(
+        (name: string) => response.headers.get(name)
+      );
 
       const fullResponse = {
         endpoint: "/api/agent/premium (POST with x402)",
         response: data,
-        ...(paymentInfo && { paymentResponse: paymentInfo }),
+        ...(paymentResponse && { paymentResponse }),
       };
 
       setPremiumResponse(JSON.stringify(fullResponse, null, 2));
       setLastEndpoint("/api/agent/premium");
       
-      // Extract transaction hash from payment response if available
-      if (paymentInfo?.transaction) {
-        setLastPaymentTxHash(paymentInfo.transaction);
+      // Extract full proof of payment from payment response if available
+      if (paymentResponse?.transaction) {
+        setLastPaymentTxHash(paymentResponse.transaction);
+        
+        // Build proof of payment from decoded payment response
+        // SettleResponse contains: transaction, network, payer (sender)
+        // Note: payee (receiver) is not in the response - it's the configured agent wallet
+        const proofOfPayment: ProofOfPayment = {
+          fromAddress: paymentResponse.payer || "",
+          toAddress: process.env.NEXT_PUBLIC_AGENT_WALLET_ADDRESS || "(agent wallet)",
+          chainId: paymentResponse.network ? paymentResponse.network.split(":")[1] || String(PAYMENT_CHAIN_ID) : String(PAYMENT_CHAIN_ID),
+          txHash: paymentResponse.transaction,
+        };
+        setLastProofOfPayment(proofOfPayment);
       }
     } catch (error) {
       console.error("Premium endpoint request failed:", error);
@@ -252,8 +278,8 @@ export default function Home() {
               onInputChange={setInput}
               onSendMessage={onSendMessage}
               isConnected={isConnected}
-              isOnCorrectChain={isOnCorrectChain}
-              chainName={CHAIN_NAME}
+              isOnCorrectChain={isOnPaymentChain}
+              chainName={PAYMENT_CHAIN_NAME}
               walletClient={walletClient}
               isSwitchingChain={isSwitchingChain}
               isTestingEndpoint={isTestingEndpoint}
@@ -263,7 +289,7 @@ export default function Home() {
               onTestFreeEndpoint={testFreeEndpoint}
               onTestPremiumInfo={testPremiumInfo}
               onTestPremiumWithPayment={testPremiumWithPayment}
-              onSwitchChain={handleSwitchChain}
+              onSwitchChain={handleSwitchToPaymentChain}
             />
           )}
 
@@ -288,7 +314,13 @@ export default function Home() {
               agentId={agentId}
               lastEndpoint={lastEndpoint}
               lastPaymentTxHash={lastPaymentTxHash}
+              proofOfPayment={lastProofOfPayment}
               onFeedbackSuccess={handleFeedbackSuccess}
+              isConnected={isConnected}
+              isOnIdentityChain={isOnIdentityChain}
+              identityChainName={IDENTITY_CHAIN_NAME}
+              isSwitchingChain={isSwitchingChain}
+              onSwitchToIdentityChain={handleSwitchToIdentityChain}
             />
           )}
         </div>
@@ -297,8 +329,7 @@ export default function Home() {
       {/* Footer Info */}
       <div className="w-full max-w-4xl mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
         <p>
-          ERC-8004 Demo Agent | Chain:{" "}
-          {network || "Loading..."} | x402 Payments Enabled
+          ERC-8004 Demo Agent | Identity: {IDENTITY_CHAIN_NAME} | Payments: {PAYMENT_CHAIN_NAME}
         </p>
       </div>
     </div>

@@ -198,19 +198,20 @@ async function getReputationSummary(
     const chainId = getChainId(walletProvider);
     const reputationRegistry = getRegistryAddress("reputation", chainId);
 
-    const [count, averageScore] = (await walletProvider.readContract({
-      address: reputationRegistry,
-      abi: REPUTATION_REGISTRY_ABI,
-      functionName: "getSummary",
-      args: [BigInt(args.agentId), [], args.tag1 || "", args.tag2 || ""],
-    })) as [bigint, number];
+    // const [count, averageScore] = (await walletProvider.readContract({
+    //   address: reputationRegistry,
+    //   abi: REPUTATION_REGISTRY_ABI,
+    //   functionName: "getSummary",
+    //   args: [BigInt(args.agentId) as bigint, [], args.tag1 || "", args.tag2 || ""],
+    // })) as [bigint, number];
 
-    const filters = [];
-    if (args.tag1) filters.push(`tag1: ${args.tag1}`);
-    if (args.tag2) filters.push(`tag2: ${args.tag2}`);
-    const filterStr = filters.length > 0 ? ` (filtered by ${filters.join(", ")})` : "";
+    // const filters = [];
+    // if (args.tag1) filters.push(`tag1: ${args.tag1}`);
+    // if (args.tag2) filters.push(`tag2: ${args.tag2}`);
+    // const filterStr = filters.length > 0 ? ` (filtered by ${filters.join(", ")})` : "";
 
-    return `Reputation Summary for Agent ${args.agentId}${filterStr}:\n- Feedback Count: ${count}\n- Average Score: ${averageScore}/100`;
+    return `Reputation Summary for Agent ${args.agentId}`;
+    // return `Reputation Summary for Agent ${args.agentId}${filterStr}:\n- Feedback Count: ${count}\n- Average Score: ${averageScore}/100`;
   } catch (error) {
     return `Error getting reputation summary: ${error}`;
   }

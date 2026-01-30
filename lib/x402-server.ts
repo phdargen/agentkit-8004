@@ -34,10 +34,15 @@ registerExactEvmScheme(server);
 
 /**
  * Get the default x402 payment config for this agent
+ * 
+ * Note: Payments are on Base Sepolia (84532), separate from agent identity
+ * which is on Sepolia (11155111). The CHAIN_ID env var here refers to the
+ * payment chain, not the identity chain.
  */
 export function getDefaultPaymentConfig() {
-  const chainId = parseInt(process.env.CHAIN_ID || "11155111", 10);
-  let price = process.env.X402_PRICE || "$0.001";
+  // Default to Base Sepolia (84532) for payments
+  const chainId = parseInt(process.env.CHAIN_ID || "84532", 10);
+  const price = process.env.X402_PRICE || "$0.001";
   const payTo = process.env.AGENT_WALLET_ADDRESS || "";
 
   return {
